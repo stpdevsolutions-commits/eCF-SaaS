@@ -12,7 +12,6 @@ export class XsdValidatorService {
     const errors: string[] = [];
     const warnings: string[] = [];
 
-    // Validación de RNC
     if (!data.rncEmisor || !/^\d{9,11}$/.test(data.rncEmisor)) {
       errors.push('RNC Emisor inválido (debe ser 9-11 dígitos)');
     }
@@ -21,7 +20,6 @@ export class XsdValidatorService {
       errors.push('RNC Comprador inválido (debe ser 9-11 dígitos)');
     }
 
-    // Validación de tipo ECF
     const tiposValidos = [
       'e-CF_31_v_1_0',
       'e-CF_32_v_1_0',
@@ -39,12 +37,10 @@ export class XsdValidatorService {
       errors.push(`Tipo ECF inválido. Válidos: ${tiposValidos.join(', ')}`);
     }
 
-    // Validación de montos
     if (data.montoTotal !== undefined && data.montoTotal < 0) {
       errors.push('Monto total no puede ser negativo');
     }
 
-    // Validación de líneas
     if (!data.lineas || data.lineas.length === 0) {
       errors.push('Debe haber al menos una línea en el comprobante');
     }
@@ -63,7 +59,6 @@ export class XsdValidatorService {
       });
     }
 
-    // Campos requeridos
     if (!data.nombreEmisor) {
       errors.push('Nombre Emisor requerido');
     }

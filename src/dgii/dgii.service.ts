@@ -24,7 +24,6 @@ export class DgiiService {
 
   async authenticate(rncEmisor: string, usuario: string, clave: string): Promise<DgiiAuthResponse> {
     try {
-      // En desarrollo, retornar token mock
       if (this.configService.get('NODE_ENV') === 'development') {
         return {
           token: `mock-token-${Date.now()}`,
@@ -32,7 +31,6 @@ export class DgiiService {
         };
       }
 
-      // En producción, hacer request a DGII
       const response = await fetch(`${this.dgiiBaseUrl}/api/autenticacion`, {
         method: 'POST',
         headers: {
@@ -64,7 +62,6 @@ export class DgiiService {
 
   async transmitEcf(ecf: Ecf, token: string): Promise<DgiiTransmitResponse> {
     try {
-      // En desarrollo, retornar respuesta mock
       if (this.configService.get('NODE_ENV') === 'development') {
         return {
           uuid: `${Date.now()}-mock`,
@@ -73,7 +70,6 @@ export class DgiiService {
         };
       }
 
-      // En producción, hacer request a DGII
       const response = await fetch(`${this.dgiiBaseUrl}/api/transmisiones`, {
         method: 'POST',
         headers: {
@@ -105,7 +101,6 @@ export class DgiiService {
 
   async queryEcfStatus(uuid: string, token: string): Promise<any> {
     try {
-      // En desarrollo, retornar estado mock
       if (this.configService.get('NODE_ENV') === 'development') {
         return {
           uuid,
@@ -115,7 +110,6 @@ export class DgiiService {
         };
       }
 
-      // En producción, hacer request a DGII
       const response = await fetch(
         `${this.dgiiBaseUrl}/api/comprobantes/${uuid}`,
         {
@@ -144,7 +138,6 @@ export class DgiiService {
 
   async cancelEcf(uuid: string, motivo: string, token: string): Promise<any> {
     try {
-      // En desarrollo, retornar respuesta mock
       if (this.configService.get('NODE_ENV') === 'development') {
         return {
           uuid,
@@ -155,7 +148,6 @@ export class DgiiService {
         };
       }
 
-      // En producción, hacer request a DGII
       const response = await fetch(
         `${this.dgiiBaseUrl}/api/comprobantes/${uuid}/cancelar`,
         {

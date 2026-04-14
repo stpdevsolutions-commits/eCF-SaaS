@@ -23,14 +23,12 @@ export class EcfService {
   ) {}
 
   async create(dto: CreateEcfDto, usuarioId: string) {
-    // Validar con XSD
     const validation = this.validatorService.validateEcf(dto);
 
     if (!validation.valid) {
       throw new Error(`Validación fallida: ${validation.errors.join(', ')}`);
     }
 
-    // Calcular montos
     let montoTotal = 0;
     let montoITBIS = 0;
 
@@ -52,7 +50,6 @@ export class EcfService {
       };
     });
 
-    // Crear comprobante
     const ecf = this.ecfRepository.create({
       tipoEcf: dto.tipoEcf,
       version: 'v1.0',
@@ -71,7 +68,6 @@ export class EcfService {
 
     const ecfGuardado = await this.ecfRepository.save(ecf);
 
-    // Crear líneas
     for (const linea of lineas) {
       const lineaEntity = this.lineaRepository.create({
         ...linea,
