@@ -1,12 +1,11 @@
 import {
   Injectable,
-  BadRequestException,
-  UnauthorizedException,
   ConflictException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { Repository } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
 import { User } from './entities/user.entity';
 import { RegisterDto } from './dto/register.dto';
@@ -15,40 +14,46 @@ import { LoginDto } from './dto/login.dto';
 @Injectable()
 export class AuthService {
   constructor(
+    private jwtService: JwtService,
     @InjectRepository(User)
     private userRepository: Repository<User>,
-    private jwtService: JwtService,
   ) {}
 
   async register(dto: RegisterDto) {
-    // Verificar si usuario existe
-    const userExists = await this.userRepository.findOne({
-      where: [{ email: dto.email }, { numeroRegistro: dto.numeroRegistro }],
+    const existingUser = await this.userRepository.findOne({
+      where: { email: dto.email },
     });
 
-    if (userExists) {
-      throw new ConflictException('Usuario o número de registro ya existe');
+    if (existingUser) {
+      throw new ConflictException('El email ya está registrado');
     }
 
-    // Hash password
     const hashedPassword = await bcrypt.hash(dto.password, 10);
 
-    // Crear usuario
     const user = this.userRepository.create({
-      nombre: dto.nombre,
-      email: dto.email,
+      ...dto,
       password: hashedPassword,
-      numeroRegistro: dto.numeroRegistro,
-      tipoPersona: dto.tipoPersona || 'juridica',
-      tipoContribuyente: dto.tipoContribuyente || 'regimen_ordinario',
-      razonSocial: dto.razonSocial,
-      direccion: dto.direccion,
-      telefono: dto.telefono,
     });
 
-    await this.userRepository.save(user);
+    const savedUser = await this.userRepository.save(user);
 
-    return this.generateToken(user);
+    const payload = {
+      sub: savedUser.id,
+      email: savedUser.email,
+      numeroRegistro: savedUser.numeroRegistro,
+    };
+
+    const access_token = this.jwtService.sign(payload);
+
+    return {
+      access_token,
+      user: {
+        id: savedUser.id,
+        email: savedUser.email,
+        nombre: savedUser.nombre,
+        numeroRegistro: savedUser.numeroRegistro,
+      },
+    };
   }
 
   async login(dto: LoginDto) {
@@ -60,37 +65,22 @@ export class AuthService {
       throw new UnauthorizedException('Credenciales inválidas');
     }
 
-    // Comparar passwords
     const isPasswordValid = await bcrypt.compare(dto.password, user.password);
 
     if (!isPasswordValid) {
       throw new UnauthorizedException('Credenciales inválidas');
     }
 
-    if (!user.activo) {
-      throw new UnauthorizedException('Usuario desactivado');
-    }
-
-    return this.generateToken(user);
-  }
-
-  async validateUser(id: string) {
-    const user = await this.userRepository.findOne({ where: { id } });
-    if (!user || !user.activo) {
-      throw new UnauthorizedException('Usuario no válido');
-    }
-    return user;
-  }
-
-  private generateToken(user: User) {
     const payload = {
       sub: user.id,
       email: user.email,
       numeroRegistro: user.numeroRegistro,
     };
 
+    const access_token = this.jwtService.sign(payload);
+
     return {
-      access_token: this.jwtService.sign(payload),
+      access_token,
       user: {
         id: user.id,
         email: user.email,
@@ -98,5 +88,11 @@ export class AuthService {
         numeroRegistro: user.numeroRegistro,
       },
     };
+  }
+
+  async validateUser(id: string) {
+    return await this.userRepository.findOne({
+      where: { id },
+    });
   }
 }

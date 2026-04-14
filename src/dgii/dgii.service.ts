@@ -16,8 +16,6 @@ interface DgiiTransmitResponse {
 @Injectable()
 export class DgiiService {
   private dgiiBaseUrl: string;
-  private dgiiToken?: string;
-  private dgiiTokenExpiry?: Date;
 
   constructor(private configService: ConfigService) {
     this.dgiiBaseUrl = this.configService.get<string>('DGII_API_URL') ||
@@ -54,10 +52,7 @@ export class DgiiService {
         );
       }
 
-      const data = await response.json();
-      this.dgiiToken = data.token;
-      this.dgiiTokenExpiry = new Date(Date.now() + data.expiresIn * 1000);
-
+      const data = (await response.json()) as DgiiAuthResponse;
       return data;
     } catch (error) {
       throw new HttpException(
@@ -99,7 +94,7 @@ export class DgiiService {
         );
       }
 
-      return await response.json();
+      return (await response.json()) as DgiiTransmitResponse;
     } catch (error) {
       throw new HttpException(
         'Error en transmisión a DGII',

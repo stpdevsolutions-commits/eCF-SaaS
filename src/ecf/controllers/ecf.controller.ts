@@ -1,7 +1,7 @@
 import {
   Controller,
-  Get,
   Post,
+  Get,
   Put,
   Delete,
   Body,
@@ -14,15 +14,14 @@ import {
   ApiTags,
   ApiBearerAuth,
   ApiOperation,
-  ApiCreatedResponse,
-  ApiOkResponse,
+  ApiQuery,
 } from '@nestjs/swagger';
 import { EcfService } from '../services/ecf.service';
 import { CreateEcfDto } from '../dto/create-ecf.dto';
 import { UpdateEcfDto } from '../dto/update-ecf.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 
-@ApiTags('Comprobantes Fiscales Electrónicos')
+@ApiTags('Comprobantes Fiscales')
 @Controller('api/ecf')
 @UseGuards(JwtAuthGuard)
 @ApiBearerAuth()
@@ -31,33 +30,28 @@ export class EcfController {
 
   @Post()
   @ApiOperation({ summary: 'Crear nuevo comprobante fiscal' })
-  @ApiCreatedResponse({ description: 'Comprobante creado' })
-  async create(@Body() dto: CreateEcfDto, @Request() req) {
+  async create(@Body() dto: CreateEcfDto, @Request() req: any) {
     return await this.ecfService.create(dto, req.user.sub);
   }
 
   @Get()
-  @ApiOperation({ summary: 'Listar comprobantes con filtros' })
-  @ApiOkResponse({ description: 'Listado de comprobantes' })
+  @ApiOperation({ summary: 'Listar comprobantes fiscales' })
+  @ApiQuery({ name: 'estado', required: false })
+  @ApiQuery({ name: 'rncComprador', required: false })
   async findAll(
-    @Request() req,
+    @Request() req: any,
     @Query('estado') estado?: string,
-    @Query('desde') desde?: string,
-    @Query('hasta') hasta?: string,
     @Query('rncComprador') rncComprador?: string,
   ) {
-    const filters = {
+    return await this.ecfService.findAll(req.user.sub, {
       estado,
-      desde: desde ? new Date(desde) : undefined,
-      hasta: hasta ? new Date(hasta) : undefined,
       rncComprador,
-    };
-    return await this.ecfService.findAll(req.user.sub, filters);
+    });
   }
 
   @Get(':id')
   @ApiOperation({ summary: 'Obtener comprobante por ID' })
-  async findOne(@Param('id') id: string, @Request() req) {
+  async findOne(@Param('id') id: string, @Request() req: any) {
     return await this.ecfService.findOne(id, req.user.sub);
   }
 
@@ -66,26 +60,26 @@ export class EcfController {
   async update(
     @Param('id') id: string,
     @Body() dto: UpdateEcfDto,
-    @Request() req,
+    @Request() req: any,
   ) {
     return await this.ecfService.update(id, dto, req.user.sub);
   }
 
   @Delete(':id')
   @ApiOperation({ summary: 'Eliminar comprobante' })
-  async remove(@Param('id') id: string, @Request() req) {
+  async remove(@Param('id') id: string, @Request() req: any) {
     return await this.ecfService.remove(id, req.user.sub);
   }
 
   @Post(':id/validate')
-  @ApiOperation({ summary: 'Validar comprobante' })
-  async validate(@Param('id') id: string, @Request() req) {
+  @ApiOperation({ summary: 'Validar comprobante con XSD' })
+  async validate(@Param('id') id: string, @Request() req: any) {
     return await this.ecfService.validateEcf(id, req.user.sub);
   }
 
   @Post(':id/sign')
   @ApiOperation({ summary: 'Firmar comprobante' })
-  async sign(@Param('id') id: string, @Request() req) {
+  async sign(@Param('id') id: string, @Request() req: any) {
     return await this.ecfService.signEcf(id, req.user.sub);
   }
 }
