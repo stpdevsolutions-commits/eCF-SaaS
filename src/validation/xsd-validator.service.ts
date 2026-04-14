@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 
-interface ValidationResult {
+export interface ValidationResult {
   valid: boolean;
   errors: string[];
   warnings: string[];

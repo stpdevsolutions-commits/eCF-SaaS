@@ -11,6 +11,7 @@ import { User } from './auth/entities/user.entity';
 import { Ecf } from './ecf/entities/ecf.entity';
 import { LineaEcf } from './ecf/entities/linea-ecf.entity';
 
+
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, envFilePath: '.env' }),

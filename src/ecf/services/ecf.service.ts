@@ -77,7 +77,6 @@ export class EcfService {
     }
 
     return {
-      id: ecfGuardado.id,
       ...ecfGuardado,
       lineas,
     };

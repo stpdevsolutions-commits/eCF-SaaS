@@ -2,7 +2,7 @@ import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Ecf } from '../ecf/entities/ecf.entity';
 
-interface DgiiAuthResponse {
+export interface DgiiAuthResponse {
   token: string;
   expiresIn: number;
 }

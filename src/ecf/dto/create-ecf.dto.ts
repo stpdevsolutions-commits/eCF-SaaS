@@ -9,13 +9,13 @@ import { Type } from 'class-transformer';
 
 export class CreateLineaEcfDto {
   @IsString()
-  descripcion: string;
+  descripcion!: string;
 
   @IsNumber()
-  cantidad: number;
+  cantidad!: number;
 
   @IsNumber()
-  precioUnitario: number;
+  precioUnitario!: number;
 
   @IsNumber()
   @IsOptional()
@@ -24,19 +24,19 @@ export class CreateLineaEcfDto {
 
 export class CreateEcfDto {
   @IsString()
-  tipoEcf: string;
+  tipoEcf!: string;
 
   @IsString()
-  rncEmisor: string;
+  rncEmisor!: string;
 
   @IsString()
-  nombreEmisor: string;
+  nombreEmisor!: string;
 
   @IsString()
-  rncComprador: string;
+  rncComprador!: string;
 
   @IsString()
-  nombreComprador: string;
+  nombreComprador!: string;
 
   @IsString()
   @IsOptional()
@@ -45,5 +45,5 @@ export class CreateEcfDto {
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => CreateLineaEcfDto)
-  lineas: CreateLineaEcfDto[];
+  lineas!: CreateLineaEcfDto[];
 }
