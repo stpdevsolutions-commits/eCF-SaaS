@@ -1,12 +1,10 @@
-version: '3.8'
+﻿version: '3.8'
 services:
   postgres:
     image: postgres:15-alpine
     container_name: ecf_saas_postgres
     environment:
-      POSTGRES_USER: ecf_user
-      POSTGRES_PASSWORD: ecf_pass_dev
-      POSTGRES_DB: ecf_saas
+      POSTGRES_PASSWORD: postgres
     ports:
       - "5432:5432"
     volumes:
