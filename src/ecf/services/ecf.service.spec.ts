@@ -4,12 +4,16 @@ import { EcfService } from './ecf.service';
 import { Ecf } from '../entities/ecf.entity';
 import { LineaEcf } from '../entities/linea-ecf.entity';
 import { XsdValidatorService } from '../../validation/xsd-validator.service';
+import { EcfXmlService } from './ecf-xml.service';
+import { EcfSigningService } from './ecf-signing.service';
 
 describe('EcfService', () => {
   let service: EcfService;
   let mockEcfRepository: any;
   let mockLineaRepository: any;
   let mockValidatorService: any;
+  let mockXmlService: any;
+  let mockSigningService: any;
 
   beforeEach(async () => {
     mockEcfRepository = {
@@ -32,6 +36,24 @@ describe('EcfService', () => {
         errors: [],
         warnings: [],
       }),
+      validateXmlStructure: jest.fn().mockReturnValue({
+        valid: true,
+        errors: [],
+        warnings: [],
+      }),
+      calculateLineTotal: jest.fn().mockReturnValue({
+        subtotal: 1000,
+        itbis: 180,
+        total: 1180,
+      }),
+    };
+
+    mockXmlService = {
+      generateXml: jest.fn().mockReturnValue('<ECF></ECF>'),
+    };
+
+    mockSigningService = {
+      signXml: jest.fn().mockReturnValue('<ECF><ds:Signature/></ECF>'),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -48,6 +70,14 @@ describe('EcfService', () => {
         {
           provide: XsdValidatorService,
           useValue: mockValidatorService,
+        },
+        {
+          provide: EcfXmlService,
+          useValue: mockXmlService,
+        },
+        {
+          provide: EcfSigningService,
+          useValue: mockSigningService,
         },
       ],
     }).compile();
@@ -101,6 +131,7 @@ describe('EcfService', () => {
         tipoEcf: 'e-CF_31_v_1_0',
         rncEmisor: '12345678901',
         rncComprador: '98765432109',
+        estado: 'draft',
         usuario: { id: 'user-id' },
       };
 

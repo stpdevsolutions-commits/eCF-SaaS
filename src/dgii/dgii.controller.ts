@@ -15,7 +15,7 @@ import { DgiiService } from './dgii.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 
 @ApiTags('Integración DGII')
-@Controller('api/dgii')
+@Controller('dgii')
 @UseGuards(JwtAuthGuard)
 @ApiBearerAuth()
 export class DgiiController {

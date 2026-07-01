@@ -21,8 +21,8 @@ export class Ecf {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
-  @Column({ type: 'varchar', length: 10 })
-  tipoEcf!: string; // e31, e32, e33, e34, e41, e43, e44, e45, e46, e47
+  @Column({ type: 'varchar', length: 20 })
+  tipoEcf!: string; // e-CF_31_v_1_0 … e-CF_47_v_1_0
 
   @Column({ type: 'varchar', length: 10, default: 'v1.0' })
   version!: string;

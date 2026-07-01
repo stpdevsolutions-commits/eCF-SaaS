@@ -22,7 +22,7 @@ import { UpdateEcfDto } from '../dto/update-ecf.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 
 @ApiTags('Comprobantes Fiscales')
-@Controller('api/ecf')
+@Controller('ecf')
 @UseGuards(JwtAuthGuard)
 @ApiBearerAuth()
 export class EcfController {
@@ -31,7 +31,7 @@ export class EcfController {
   @Post()
   @ApiOperation({ summary: 'Crear nuevo comprobante fiscal' })
   async create(@Body() dto: CreateEcfDto, @Request() req: any) {
-    return await this.ecfService.create(dto, req.user.sub);
+    return await this.ecfService.create(dto, req.user.id);
   }
 
   @Get()
@@ -43,7 +43,7 @@ export class EcfController {
     @Query('estado') estado?: string,
     @Query('rncComprador') rncComprador?: string,
   ) {
-    return await this.ecfService.findAll(req.user.sub, {
+    return await this.ecfService.findAll(req.user.id, {
       estado,
       rncComprador,
     });
@@ -52,7 +52,7 @@ export class EcfController {
   @Get(':id')
   @ApiOperation({ summary: 'Obtener comprobante por ID' })
   async findOne(@Param('id') id: string, @Request() req: any) {
-    return await this.ecfService.findOne(id, req.user.sub);
+    return await this.ecfService.findOne(id, req.user.id);
   }
 
   @Put(':id')
@@ -62,24 +62,24 @@ export class EcfController {
     @Body() dto: UpdateEcfDto,
     @Request() req: any,
   ) {
-    return await this.ecfService.update(id, dto, req.user.sub);
+    return await this.ecfService.update(id, dto, req.user.id);
   }
 
   @Delete(':id')
   @ApiOperation({ summary: 'Eliminar comprobante' })
   async remove(@Param('id') id: string, @Request() req: any) {
-    return await this.ecfService.remove(id, req.user.sub);
+    return await this.ecfService.remove(id, req.user.id);
   }
 
   @Post(':id/validate')
   @ApiOperation({ summary: 'Validar comprobante con XSD' })
   async validate(@Param('id') id: string, @Request() req: any) {
-    return await this.ecfService.validateEcf(id, req.user.sub);
+    return await this.ecfService.validateEcf(id, req.user.id);
   }
 
   @Post(':id/sign')
   @ApiOperation({ summary: 'Firmar comprobante' })
   async sign(@Param('id') id: string, @Request() req: any) {
-    return await this.ecfService.signEcf(id, req.user.sub);
+    return await this.ecfService.signEcf(id, req.user.id);
   }
 }

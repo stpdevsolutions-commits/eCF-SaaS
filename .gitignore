@@ -9,3 +9,11 @@ coverage/
 .vscode/
 tmp/
 temp/
+*.tmp.*
+
+# Frontend (Next.js)
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/.env.local
+frontend/*.tsbuildinfo

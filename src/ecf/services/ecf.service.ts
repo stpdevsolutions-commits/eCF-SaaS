@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   UnauthorizedException,
+  BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -10,7 +11,8 @@ import { LineaEcf } from '../entities/linea-ecf.entity';
 import { CreateEcfDto } from '../dto/create-ecf.dto';
 import { UpdateEcfDto } from '../dto/update-ecf.dto';
 import { XsdValidatorService } from '../../validation/xsd-validator.service';
-import { v4 as uuidv4 } from 'uuid';
+import { EcfXmlService } from './ecf-xml.service';
+import { EcfSigningService } from './ecf-signing.service';
 
 @Injectable()
 export class EcfService {
@@ -20,13 +22,15 @@ export class EcfService {
     @InjectRepository(LineaEcf)
     private lineaRepository: Repository<LineaEcf>,
     private validatorService: XsdValidatorService,
+    private xmlService: EcfXmlService,
+    private signingService: EcfSigningService,
   ) {}
 
   async create(dto: CreateEcfDto, usuarioId: string) {
-    const validation = this.validatorService.validateEcf(dto);
+    const validation = this.validatorService.validateEcf(dto as any);
 
     if (!validation.valid) {
-      throw new Error(`Validación fallida: ${validation.errors.join(', ')}`);
+      throw new BadRequestException(`Validación fallida: ${validation.errors.join(', ')}`);
     }
 
     let montoTotal = 0;
@@ -76,16 +80,13 @@ export class EcfService {
       await this.lineaRepository.save(lineaEntity);
     }
 
-    return {
-      ...ecfGuardado,
-      lineas,
-    };
+    return { ...ecfGuardado, lineas };
   }
 
   async findAll(usuarioId: string, filters?: { estado?: string; rncComprador?: string }) {
     let query = this.ecfRepository
       .createQueryBuilder('ecf')
-      .where('ecf.usuarioId = :usuarioId', { usuarioId })
+      .where('ecf.usuario_id = :usuarioId', { usuarioId })
       .leftJoinAndSelect('ecf.lineas', 'lineas');
 
     if (filters?.estado) {
@@ -138,31 +139,62 @@ export class EcfService {
     return { message: 'Comprobante eliminado exitosamente' };
   }
 
+  // ── Validación ──────────────────────────────────────────────────────────────
+
   async validateEcf(id: string, usuarioId: string) {
     const ecf = await this.findOne(id, usuarioId);
 
-    const validation = this.validatorService.validateEcf(ecf);
+    if (!['draft', 'validated'].includes(ecf.estado)) {
+      throw new BadRequestException(
+        `Solo se pueden validar comprobantes en estado draft o validated (estado actual: ${ecf.estado})`,
+      );
+    }
 
-    ecf.estado = validation.valid ? 'validated' : 'draft';
+    const xml = this.xmlService.generateXml(ecf);
+    const result = this.validatorService.validateXmlStructure(xml, ecf.tipoEcf);
+
+    ecf.xmlValidacion = xml;
+    ecf.estado = result.valid ? 'validated' : 'draft';
     await this.ecfRepository.save(ecf);
 
-    return validation;
+    return { ...result, estado: ecf.estado, xmlGenerado: xml };
   }
+
+  // ── Firma digital ───────────────────────────────────────────────────────────
 
   async signEcf(id: string, usuarioId: string) {
     const ecf = await this.findOne(id, usuarioId);
 
-    if (ecf.estado === 'draft') {
-      ecf.estado = 'signed';
-      ecf.uuid = uuidv4();
-      await this.ecfRepository.save(ecf);
+    if (!['draft', 'validated'].includes(ecf.estado)) {
+      throw new BadRequestException(
+        `Solo se pueden firmar comprobantes en estado draft o validated (estado actual: ${ecf.estado})`,
+      );
     }
+
+    // Reutilizar XML validado o generar uno nuevo
+    const xmlSinFirmar = ecf.xmlValidacion ?? this.xmlService.generateXml(ecf);
+
+    // Validar estructura antes de firmar
+    const validation = this.validatorService.validateXmlStructure(xmlSinFirmar, ecf.tipoEcf);
+    if (!validation.valid) {
+      throw new BadRequestException(
+        `El XML no es válido, corrija antes de firmar: ${validation.errors.join('; ')}`,
+      );
+    }
+
+    // Firmar con XMLDSig (RSA-2048 / SHA-256 / C14N / X509Certificate)
+    const xmlFirmado = this.signingService.signXml(xmlSinFirmar);
+
+    ecf.xmlFirmado = xmlFirmado;
+    ecf.estado = 'signed';
+    await this.ecfRepository.save(ecf);
 
     return {
       id: ecf.id,
-      uuid: ecf.uuid,
       estado: ecf.estado,
-      mensaje: 'Comprobante firmado (pendiente firma digital real)',
+      xmlFirmado,
+      mensaje: 'Comprobante firmado exitosamente con XMLDSig (RSA-2048 / SHA-256)',
+      advertencias: validation.warnings,
     };
   }
 }
