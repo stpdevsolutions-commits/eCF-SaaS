@@ -33,6 +33,16 @@ export class LineaEcf {
   @Column({ type: 'numeric', precision: 12, scale: 2, default: 0 })
   itbis!: number;
 
+  // Retención (e-CF 31/33/34: opcional; e-CF 41: requerido) — 1 = Retención, 2 = Percepción
+  @Column({ type: 'int', nullable: true })
+  indicadorAgenteRetencionoPercepcion?: number;
+
+  @Column({ type: 'numeric', precision: 12, scale: 2, nullable: true })
+  montoItbisRetenido?: number;
+
+  @Column({ type: 'numeric', precision: 12, scale: 2, nullable: true })
+  montoIsrRetenido?: number;
+
   @ManyToOne(() => Ecf, (ecf) => ecf.lineas, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'ecf_id' })
   ecf!: Ecf;

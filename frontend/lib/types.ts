@@ -16,6 +16,9 @@ export interface LineaEcf {
   descuentoLinea: number;
   subtotal: number;
   itbis: number;
+  indicadorAgenteRetencionoPercepcion?: number;
+  montoItbisRetenido?: number;
+  montoIsrRetenido?: number;
 }
 
 export interface Ecf {
@@ -48,6 +51,9 @@ export interface CreateLineaEcfDto {
   cantidad: number;
   precioUnitario: number;
   descuentoLinea?: number;
+  indicadorAgenteRetencionoPercepcion?: number;
+  montoItbisRetenido?: number;
+  montoIsrRetenido?: number;
 }
 
 export interface CreateEcfDto {
@@ -72,4 +78,14 @@ export interface LoginResponse {
 export interface ApiError {
   message: string | string[];
   statusCode: number;
+}
+
+export interface ResumenReporte {
+  cantidad: number;
+  montoTotal: number;
+  montoITBIS: number;
+  montoItbisRetenido: number;
+  montoRentaRetenido: number;
+  porEstado: Record<string, number>;
+  porTipo: Record<string, number>;
 }

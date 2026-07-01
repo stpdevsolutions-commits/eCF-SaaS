@@ -35,6 +35,8 @@ export class EcfService {
 
     let montoTotal = 0;
     let montoITBIS = 0;
+    let montoItbisRetenido = 0;
+    let montoRentaRetenido = 0;
 
     const lineas = dto.lineas.map((linea, index) => {
       const { subtotal, itbis, total } = this.validatorService.calculateLineTotal(
@@ -45,6 +47,8 @@ export class EcfService {
 
       montoTotal += total;
       montoITBIS += itbis;
+      montoItbisRetenido += linea.montoItbisRetenido || 0;
+      montoRentaRetenido += linea.montoIsrRetenido || 0;
 
       return {
         numero: index + 1,
@@ -65,6 +69,8 @@ export class EcfService {
       montoTotal,
       montoDescuento: 0,
       montoITBIS,
+      montoItbisRetenido,
+      montoRentaRetenido,
       moneda: dto.moneda || 'RD',
       estado: 'draft',
       usuario: { id: usuarioId } as any,
@@ -158,6 +164,99 @@ export class EcfService {
     await this.ecfRepository.save(ecf);
 
     return { ...result, estado: ecf.estado, xmlGenerado: xml };
+  }
+
+  // ── Reportes ────────────────────────────────────────────────────────────────
+
+  private queryConFiltros(
+    usuarioId: string,
+    filters?: { desde?: string; hasta?: string; estado?: string },
+  ) {
+    const query = this.ecfRepository
+      .createQueryBuilder('ecf')
+      .where('ecf.usuario_id = :usuarioId', { usuarioId });
+
+    if (filters?.desde) {
+      query.andWhere('ecf.fechaEmision >= :desde', { desde: filters.desde });
+    }
+    if (filters?.hasta) {
+      query.andWhere('ecf.fechaEmision <= :hasta', { hasta: filters.hasta });
+    }
+    if (filters?.estado) {
+      query.andWhere('ecf.estado = :estado', { estado: filters.estado });
+    }
+
+    return query;
+  }
+
+  async getResumen(
+    usuarioId: string,
+    filters?: { desde?: string; hasta?: string; estado?: string },
+  ) {
+    const comprobantes = await this.queryConFiltros(usuarioId, filters).getMany();
+
+    const totales = comprobantes.reduce(
+      (acc, e) => {
+        acc.cantidad += 1;
+        acc.montoTotal += Number(e.montoTotal);
+        acc.montoITBIS += Number(e.montoITBIS);
+        acc.montoItbisRetenido += Number(e.montoItbisRetenido);
+        acc.montoRentaRetenido += Number(e.montoRentaRetenido);
+        return acc;
+      },
+      { cantidad: 0, montoTotal: 0, montoITBIS: 0, montoItbisRetenido: 0, montoRentaRetenido: 0 },
+    );
+
+    const porEstado: Record<string, number> = {};
+    const porTipo: Record<string, number> = {};
+    for (const e of comprobantes) {
+      porEstado[e.estado] = (porEstado[e.estado] ?? 0) + 1;
+      porTipo[e.tipoEcf] = (porTipo[e.tipoEcf] ?? 0) + 1;
+    }
+
+    return { ...totales, porEstado, porTipo };
+  }
+
+  async exportCsv(
+    usuarioId: string,
+    filters?: { desde?: string; hasta?: string; estado?: string },
+  ): Promise<string> {
+    const comprobantes = await this.queryConFiltros(usuarioId, filters)
+      .orderBy('ecf.fechaEmision', 'DESC')
+      .getMany();
+
+    const header = [
+      'Tipo',
+      'UUID DGII',
+      'RNC Comprador',
+      'Nombre Comprador',
+      'Estado',
+      'Monto Total',
+      'ITBIS',
+      'ITBIS Retenido',
+      'ISR Retenido',
+      'Fecha Emisión',
+    ];
+
+    const filas = comprobantes.map((e) => [
+      e.tipoEcf,
+      e.uuid ?? '',
+      e.rncComprador,
+      e.nombreComprador,
+      e.estado,
+      Number(e.montoTotal).toFixed(2),
+      Number(e.montoITBIS).toFixed(2),
+      Number(e.montoItbisRetenido).toFixed(2),
+      Number(e.montoRentaRetenido).toFixed(2),
+      e.fechaEmision.toISOString(),
+    ]);
+
+    const csvEscape = (v: string) =>
+      /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+
+    return [header, ...filas]
+      .map((fila) => fila.map((v) => csvEscape(String(v))).join(','))
+      .join('\n');
   }
 
   // ── Firma digital ───────────────────────────────────────────────────────────

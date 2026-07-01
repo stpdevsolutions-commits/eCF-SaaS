@@ -9,6 +9,7 @@ import {
   UseGuards,
   Request,
   Query,
+  Res,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -16,6 +17,7 @@ import {
   ApiOperation,
   ApiQuery,
 } from '@nestjs/swagger';
+import { Response } from 'express';
 import { EcfService } from '../services/ecf.service';
 import { CreateEcfDto } from '../dto/create-ecf.dto';
 import { UpdateEcfDto } from '../dto/update-ecf.dto';
@@ -47,6 +49,38 @@ export class EcfController {
       estado,
       rncComprador,
     });
+  }
+
+  @Get('reportes/resumen')
+  @ApiOperation({ summary: 'Resumen agregado de comprobantes (totales, por estado, por tipo)' })
+  @ApiQuery({ name: 'desde', required: false, description: 'Fecha ISO (inclusive)' })
+  @ApiQuery({ name: 'hasta', required: false, description: 'Fecha ISO (inclusive)' })
+  @ApiQuery({ name: 'estado', required: false })
+  async resumen(
+    @Request() req: any,
+    @Query('desde') desde?: string,
+    @Query('hasta') hasta?: string,
+    @Query('estado') estado?: string,
+  ) {
+    return await this.ecfService.getResumen(req.user.id, { desde, hasta, estado });
+  }
+
+  @Get('reportes/export')
+  @ApiOperation({ summary: 'Exportar comprobantes a CSV' })
+  @ApiQuery({ name: 'desde', required: false, description: 'Fecha ISO (inclusive)' })
+  @ApiQuery({ name: 'hasta', required: false, description: 'Fecha ISO (inclusive)' })
+  @ApiQuery({ name: 'estado', required: false })
+  async exportar(
+    @Request() req: any,
+    @Res() res: Response,
+    @Query('desde') desde?: string,
+    @Query('hasta') hasta?: string,
+    @Query('estado') estado?: string,
+  ) {
+    const csv = await this.ecfService.exportCsv(req.user.id, { desde, hasta, estado });
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="comprobantes.csv"');
+    res.send(csv);
   }
 
   @Get(':id')

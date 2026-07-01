@@ -1,4 +1,4 @@
-import { CreateEcfDto, Ecf, LoginResponse } from './types';
+import { CreateEcfDto, Ecf, LoginResponse, ResumenReporte } from './types';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3000';
 
@@ -101,4 +101,45 @@ export async function signEcf(id: string): Promise<{ estado: string; mensaje: st
     headers: authHeaders(),
   });
   return handleResponse(res);
+}
+
+// ── Reportes ─────────────────────────────────────────────────────────────────
+
+export interface ReporteFiltros {
+  desde?: string;
+  hasta?: string;
+  estado?: string;
+}
+
+function reporteParams(filtros?: ReporteFiltros): string {
+  const params = new URLSearchParams();
+  if (filtros?.desde) params.set('desde', filtros.desde);
+  if (filtros?.hasta) params.set('hasta', filtros.hasta);
+  if (filtros?.estado) params.set('estado', filtros.estado);
+  const qs = params.toString();
+  return qs ? `?${qs}` : '';
+}
+
+export async function getResumenReporte(filtros?: ReporteFiltros): Promise<ResumenReporte> {
+  const res = await fetch(`${API_URL}/api/ecf/reportes/resumen${reporteParams(filtros)}`, {
+    headers: authHeaders(),
+  });
+  return handleResponse<ResumenReporte>(res);
+}
+
+export async function descargarReporteCsv(filtros?: ReporteFiltros): Promise<void> {
+  const res = await fetch(`${API_URL}/api/ecf/reportes/export${reporteParams(filtros)}`, {
+    headers: authHeaders(),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.message ?? `Error ${res.status}`);
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'comprobantes.csv';
+  a.click();
+  URL.revokeObjectURL(url);
 }

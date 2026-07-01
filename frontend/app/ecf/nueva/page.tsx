@@ -12,6 +12,9 @@ interface LineaForm {
   cantidad: string;
   precioUnitario: string;
   descuentoLinea: string;
+  indicadorRetencion: string; // '' | '1' (Retención) | '2' (Percepción)
+  montoItbisRetenido: string;
+  montoIsrRetenido: string;
 }
 
 const LINEA_VACIA: LineaForm = {
@@ -19,7 +22,27 @@ const LINEA_VACIA: LineaForm = {
   cantidad: '1',
   precioUnitario: '',
   descuentoLinea: '0',
+  indicadorRetencion: '',
+  montoItbisRetenido: '',
+  montoIsrRetenido: '',
 };
+
+const TIPOS_ECF = [
+  { value: 'e-CF_31_v_1_0', label: 'E31 — Factura de Crédito Fiscal' },
+  { value: 'e-CF_32_v_1_0', label: 'E32 — Factura de Consumo' },
+  { value: 'e-CF_33_v_1_0', label: 'E33 — Nota de Débito' },
+  { value: 'e-CF_34_v_1_0', label: 'E34 — Nota de Crédito' },
+  { value: 'e-CF_41_v_1_0', label: 'E41 — Comprobante de Compras' },
+  { value: 'e-CF_43_v_1_0', label: 'E43 — Comprobante Gastos Menores' },
+  { value: 'e-CF_44_v_1_0', label: 'E44 — Comprobante Regímenes Especiales' },
+  { value: 'e-CF_45_v_1_0', label: 'E45 — Comprobante Gubernamental' },
+  { value: 'e-CF_46_v_1_0', label: 'E46 — Comprobante para Exportaciones' },
+  { value: 'e-CF_47_v_1_0', label: 'E47 — Comprobante Pagos al Exterior' },
+];
+
+// Tipos cuyo XSD define el bloque <Retencion> por línea (31/33/34 opcional, 41 obligatorio)
+const TIPOS_CON_RETENCION = ['e-CF_31_v_1_0', 'e-CF_33_v_1_0', 'e-CF_34_v_1_0', 'e-CF_41_v_1_0'];
+const TIPOS_RETENCION_REQUERIDA = ['e-CF_41_v_1_0'];
 
 function calcularLinea(linea: LineaForm) {
   const cant = parseFloat(linea.cantidad) || 0;
@@ -45,6 +68,11 @@ export default function NuevaEcfPage() {
 
 function NuevaEcfContent() {
   const router = useRouter();
+
+  // Tipo de comprobante
+  const [tipoEcf, setTipoEcf] = useState('e-CF_31_v_1_0');
+  const soportaRetencion = TIPOS_CON_RETENCION.includes(tipoEcf);
+  const retencionRequerida = TIPOS_RETENCION_REQUERIDA.includes(tipoEcf);
 
   // Emisor
   const [rncEmisor, setRncEmisor] = useState('');
@@ -105,23 +133,36 @@ function NuevaEcfContent() {
       return;
     }
 
+    if (retencionRequerida && lineasValidas.some((l) => !l.indicadorRetencion)) {
+      setError(
+        `El tipo ${tipoEcf} exige indicar Retención/Percepción en cada línea (la DGII lo requiere para este tipo de comprobante).`,
+      );
+      return;
+    }
+
     setLoading(true);
     try {
       const dto = {
-        tipoEcf: 'e-CF_31_v_1_0',
+        tipoEcf,
         rncEmisor: rncEmisor.trim(),
         nombreEmisor: nombreEmisor.trim(),
         rncComprador: rncComprador.trim(),
         nombreComprador: nombreComprador.trim(),
         moneda: 'RD',
-        lineas: lineasValidas.map(
-          (l): CreateLineaEcfDto => ({
+        lineas: lineasValidas.map((l): CreateLineaEcfDto => {
+          const linea: CreateLineaEcfDto = {
             descripcion: l.descripcion.trim(),
             cantidad: parseFloat(l.cantidad),
             precioUnitario: parseFloat(l.precioUnitario),
             descuentoLinea: parseFloat(l.descuentoLinea) || 0,
-          }),
-        ),
+          };
+          if (soportaRetencion && l.indicadorRetencion) {
+            linea.indicadorAgenteRetencionoPercepcion = parseInt(l.indicadorRetencion, 10);
+            if (l.montoItbisRetenido) linea.montoItbisRetenido = parseFloat(l.montoItbisRetenido);
+            if (l.montoIsrRetenido) linea.montoIsrRetenido = parseFloat(l.montoIsrRetenido);
+          }
+          return linea;
+        }),
       };
 
       const ecf = await createEcf(dto);
@@ -147,13 +188,6 @@ function NuevaEcfContent() {
             ← Volver
           </button>
           <h1 className="text-2xl font-bold text-gray-900">Nuevo Comprobante Fiscal</h1>
-          <p className="text-sm text-gray-500 mt-0.5">
-            Tipo{' '}
-            <span className="font-mono font-semibold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded">
-              E31
-            </span>{' '}
-            — Factura de Crédito Fiscal
-          </p>
         </div>
 
         {/* Error */}
@@ -164,11 +198,37 @@ function NuevaEcfContent() {
         )}
 
         <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Datos del Emisor */}
+          {/* Tipo de comprobante */}
           <div className="card p-6">
             <h2 className="text-base font-semibold text-gray-900 mb-4 flex items-center gap-2">
               <span className="w-6 h-6 bg-blue-100 text-blue-700 rounded-full text-xs flex items-center justify-center font-bold">
                 1
+              </span>
+              Tipo de Comprobante
+            </h2>
+            <select
+              value={tipoEcf}
+              onChange={(e) => setTipoEcf(e.target.value)}
+              className="input-field"
+            >
+              {TIPOS_ECF.map((t) => (
+                <option key={t.value} value={t.value}>
+                  {t.label}
+                </option>
+              ))}
+            </select>
+            {retencionRequerida && (
+              <p className="mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                Este tipo requiere indicar Retención/Percepción en cada línea de detalle.
+              </p>
+            )}
+          </div>
+
+          {/* Datos del Emisor */}
+          <div className="card p-6">
+            <h2 className="text-base font-semibold text-gray-900 mb-4 flex items-center gap-2">
+              <span className="w-6 h-6 bg-blue-100 text-blue-700 rounded-full text-xs flex items-center justify-center font-bold">
+                2
               </span>
               Datos del Emisor
             </h2>
@@ -203,7 +263,7 @@ function NuevaEcfContent() {
           <div className="card p-6">
             <h2 className="text-base font-semibold text-gray-900 mb-4 flex items-center gap-2">
               <span className="w-6 h-6 bg-blue-100 text-blue-700 rounded-full text-xs flex items-center justify-center font-bold">
-                2
+                3
               </span>
               Datos del Comprador
             </h2>
@@ -238,7 +298,7 @@ function NuevaEcfContent() {
           <div className="card p-6">
             <h2 className="text-base font-semibold text-gray-900 mb-4 flex items-center gap-2">
               <span className="w-6 h-6 bg-blue-100 text-blue-700 rounded-full text-xs flex items-center justify-center font-bold">
-                3
+                4
               </span>
               Líneas de Detalle
             </h2>
@@ -260,6 +320,19 @@ function NuevaEcfContent() {
                     <th className="pb-2 text-right text-xs font-semibold text-gray-500 w-24">
                       Descuento
                     </th>
+                    {soportaRetencion && (
+                      <>
+                        <th className="pb-2 text-left text-xs font-semibold text-gray-500 w-32">
+                          Retención{retencionRequerida ? ' *' : ''}
+                        </th>
+                        <th className="pb-2 text-right text-xs font-semibold text-gray-500 w-24">
+                          ITBIS Ret.
+                        </th>
+                        <th className="pb-2 text-right text-xs font-semibold text-gray-500 w-24">
+                          ISR Ret.
+                        </th>
+                      </>
+                    )}
                     <th className="pb-2 text-right text-xs font-semibold text-gray-500 w-28">
                       ITBIS (18%)
                     </th>
@@ -318,6 +391,44 @@ function NuevaEcfContent() {
                             className="input-field text-xs text-right"
                           />
                         </td>
+                        {soportaRetencion && (
+                          <>
+                            <td className="py-2 pr-2">
+                              <select
+                                required={retencionRequerida}
+                                value={linea.indicadorRetencion}
+                                onChange={(e) => updateLinea(i, 'indicadorRetencion', e.target.value)}
+                                className="input-field text-xs"
+                              >
+                                <option value="">— Ninguna —</option>
+                                <option value="1">Retención</option>
+                                <option value="2">Percepción</option>
+                              </select>
+                            </td>
+                            <td className="py-2 pr-2">
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={linea.montoItbisRetenido}
+                                onChange={(e) => updateLinea(i, 'montoItbisRetenido', e.target.value)}
+                                placeholder="0.00"
+                                className="input-field text-xs text-right"
+                              />
+                            </td>
+                            <td className="py-2 pr-2">
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={linea.montoIsrRetenido}
+                                onChange={(e) => updateLinea(i, 'montoIsrRetenido', e.target.value)}
+                                placeholder="0.00"
+                                className="input-field text-xs text-right"
+                              />
+                            </td>
+                          </>
+                        )}
                         <td className="py-2 pr-2 text-right text-gray-500 text-xs whitespace-nowrap">
                           {formatRD(itbis)}
                         </td>

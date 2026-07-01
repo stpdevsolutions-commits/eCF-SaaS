@@ -85,6 +85,16 @@ export class EcfXmlService {
     }
 
     lines.push(`      <MontoTotal>${this.r2(total)}</MontoTotal>`);
+
+    const itbisRetenido = Number(ecf.montoItbisRetenido);
+    const rentaRetenido = Number(ecf.montoRentaRetenido);
+    if (itbisRetenido > 0) {
+      lines.push(`      <TotalITBISRetenido>${this.r2(itbisRetenido)}</TotalITBISRetenido>`);
+    }
+    if (rentaRetenido > 0) {
+      lines.push(`      <TotalISRRetencion>${this.r2(rentaRetenido)}</TotalISRRetencion>`);
+    }
+
     lines.push('    </Totales>');
     lines.push('  </Encabezado>');
     lines.push('  <DetallesItems>');
@@ -96,6 +106,17 @@ export class EcfXmlService {
       lines.push(`      <NumeroLinea>${i + 1}</NumeroLinea>`);
       // IndicadorFacturacion: 1 = Facturación Normal
       lines.push('      <IndicadorFacturacion>1</IndicadorFacturacion>');
+      if (linea.indicadorAgenteRetencionoPercepcion) {
+        lines.push('      <Retencion>');
+        lines.push(`        <IndicadorAgenteRetencionoPercepcion>${linea.indicadorAgenteRetencionoPercepcion}</IndicadorAgenteRetencionoPercepcion>`);
+        if (linea.montoItbisRetenido) {
+          lines.push(`        <MontoITBISRetenido>${this.r2(Number(linea.montoItbisRetenido))}</MontoITBISRetenido>`);
+        }
+        if (linea.montoIsrRetenido) {
+          lines.push(`        <MontoISRRetenido>${this.r2(Number(linea.montoIsrRetenido))}</MontoISRRetenido>`);
+        }
+        lines.push('      </Retencion>');
+      }
       lines.push(`      <NombreItem>${this.esc(linea.descripcion)}</NombreItem>`);
       // IndicadorBienoServicio: 1 = Bien, 2 = Servicio
       lines.push('      <IndicadorBienoServicio>1</IndicadorBienoServicio>');

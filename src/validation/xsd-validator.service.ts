@@ -58,6 +58,9 @@ export class XsdValidatorService {
       errors.push('Debe haber al menos una línea en el comprobante');
     }
 
+    // e-CF_41 (Comprobante de Compras) exige el bloque Retencion en cada línea (XSD minOccurs=1)
+    const requiereRetencion = data['tipoEcf'] === 'e-CF_41_v_1_0';
+
     if (lineas) {
       lineas.forEach((linea, index) => {
         if (!linea['descripcion']) {
@@ -68,6 +71,11 @@ export class XsdValidatorService {
         }
         if (linea['precioUnitario'] === undefined || Number(linea['precioUnitario']) < 0) {
           errors.push(`Línea ${index + 1}: Precio unitario inválido`);
+        }
+        if (requiereRetencion && !linea['indicadorAgenteRetencionoPercepcion']) {
+          errors.push(
+            `Línea ${index + 1}: e-CF_41 requiere indicadorAgenteRetencionoPercepcion (1=Retención, 2=Percepción)`,
+          );
         }
       });
     }
@@ -202,6 +210,16 @@ export class XsdValidatorService {
     // ── 9. Presencia de firma digital ─────────────────────────────────────────
     if (!xml.includes('<ds:Signature') && !xml.includes('<Signature')) {
       warnings.push('El XML no contiene firma digital (XMLDSig). Usar POST /:id/sign antes de transmitir.');
+    }
+
+    // ── 10. Retencion requerida en e-CF_41 (XSD: minOccurs=1 por Item) ───────
+    if (tipoEcf === 'e-CF_41_v_1_0') {
+      const itemBlocks = xml.match(/<Item>[\s\S]*?<\/Item>/g) ?? [];
+      itemBlocks.forEach((item, i) => {
+        if (!item.includes('<Retencion>')) {
+          errors.push(`e-CF_41 requiere <Retencion> en el Item ${i + 1}`);
+        }
+      });
     }
 
     return { valid: errors.length === 0, errors, warnings };

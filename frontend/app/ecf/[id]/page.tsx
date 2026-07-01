@@ -258,7 +258,9 @@ function EcfDetailContent() {
             </div>
 
             {/* Líneas de detalle */}
-            {ecf.lineas && ecf.lineas.length > 0 && (
+            {ecf.lineas && ecf.lineas.length > 0 && (() => {
+              const tieneRetencion = ecf.lineas.some((l) => l.indicadorAgenteRetencionoPercepcion);
+              return (
               <div className="card p-6">
                 <h2 className="text-base font-semibold text-gray-900 mb-4">Líneas de Detalle</h2>
                 <div className="overflow-x-auto">
@@ -270,6 +272,13 @@ function EcfDetailContent() {
                         <th className="pb-2 text-right text-xs font-semibold text-gray-500">Cant.</th>
                         <th className="pb-2 text-right text-xs font-semibold text-gray-500">Precio Unit.</th>
                         <th className="pb-2 text-right text-xs font-semibold text-gray-500">Descuento</th>
+                        {tieneRetencion && (
+                          <>
+                            <th className="pb-2 text-left text-xs font-semibold text-gray-500">Retención</th>
+                            <th className="pb-2 text-right text-xs font-semibold text-gray-500">ITBIS Ret.</th>
+                            <th className="pb-2 text-right text-xs font-semibold text-gray-500">ISR Ret.</th>
+                          </>
+                        )}
                         <th className="pb-2 text-right text-xs font-semibold text-gray-500">ITBIS</th>
                         <th className="pb-2 text-right text-xs font-semibold text-gray-500">Subtotal</th>
                       </tr>
@@ -288,6 +297,23 @@ function EcfDetailContent() {
                               ? formatMonto(linea.descuentoLinea, ecf.moneda)
                               : '—'}
                           </td>
+                          {tieneRetencion && (
+                            <>
+                              <td className="py-2 pr-3 text-gray-700">
+                                {linea.indicadorAgenteRetencionoPercepcion === 1
+                                  ? 'Retención'
+                                  : linea.indicadorAgenteRetencionoPercepcion === 2
+                                    ? 'Percepción'
+                                    : '—'}
+                              </td>
+                              <td className="py-2 pr-3 text-right text-gray-700">
+                                {linea.montoItbisRetenido ? formatMonto(linea.montoItbisRetenido, ecf.moneda) : '—'}
+                              </td>
+                              <td className="py-2 pr-3 text-right text-gray-700">
+                                {linea.montoIsrRetenido ? formatMonto(linea.montoIsrRetenido, ecf.moneda) : '—'}
+                              </td>
+                            </>
+                          )}
                           <td className="py-2 pr-3 text-right text-gray-700">
                             {formatMonto(linea.itbis, ecf.moneda)}
                           </td>
@@ -311,6 +337,18 @@ function EcfDetailContent() {
                       <span>ITBIS total</span>
                       <span>{formatMonto(ecf.montoITBIS, ecf.moneda)}</span>
                     </div>
+                    {Number(ecf.montoItbisRetenido) > 0 && (
+                      <div className="flex justify-between text-gray-600">
+                        <span>ITBIS retenido</span>
+                        <span>-{formatMonto(ecf.montoItbisRetenido, ecf.moneda)}</span>
+                      </div>
+                    )}
+                    {Number(ecf.montoRentaRetenido) > 0 && (
+                      <div className="flex justify-between text-gray-600">
+                        <span>ISR retenido</span>
+                        <span>-{formatMonto(ecf.montoRentaRetenido, ecf.moneda)}</span>
+                      </div>
+                    )}
                     <div className="flex justify-between font-bold text-gray-900 text-base border-t border-gray-200 pt-1.5 mt-1.5">
                       <span>Total</span>
                       <span>{formatMonto(ecf.montoTotal, ecf.moneda)}</span>
@@ -318,7 +356,8 @@ function EcfDetailContent() {
                   </div>
                 </div>
               </div>
-            )}
+              );
+            })()}
 
             {/* XML Firmado (collapsible) */}
             {ecf.xmlFirmado && (

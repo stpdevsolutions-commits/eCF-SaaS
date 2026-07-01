@@ -3,6 +3,7 @@ import {
   IsNumber,
   IsArray,
   IsOptional,
+  IsIn,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -20,6 +21,19 @@ export class CreateLineaEcfDto {
   @IsNumber()
   @IsOptional()
   descuentoLinea?: number;
+
+  // Retención: 1 = Retención, 2 = Percepción (requerido por el XSD cuando tipoEcf es e-CF_41)
+  @IsIn([1, 2])
+  @IsOptional()
+  indicadorAgenteRetencionoPercepcion?: number;
+
+  @IsNumber()
+  @IsOptional()
+  montoItbisRetenido?: number;
+
+  @IsNumber()
+  @IsOptional()
+  montoIsrRetenido?: number;
 }
 
 export class CreateEcfDto {
