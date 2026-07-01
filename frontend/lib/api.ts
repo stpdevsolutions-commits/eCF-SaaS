@@ -103,6 +103,57 @@ export async function signEcf(id: string): Promise<{ estado: string; mensaje: st
   return handleResponse(res);
 }
 
+export async function transmitEcf(id: string): Promise<{
+  estado: string;
+  uuid: string;
+  codigoSeguridadDgii: string;
+  mensajes: string[];
+}> {
+  const res = await fetch(`${API_URL}/api/ecf/${id}/transmit`, {
+    method: 'POST',
+    headers: authHeaders(),
+  });
+  return handleResponse(res);
+}
+
+export async function checkEcfStatus(id: string): Promise<{
+  estado: string;
+  estadoDgii: string;
+  mensaje: string;
+}> {
+  const res = await fetch(`${API_URL}/api/ecf/${id}/status`, {
+    headers: authHeaders(),
+  });
+  return handleResponse(res);
+}
+
+export async function cancelEcf(
+  id: string,
+  motivo: string,
+): Promise<{ estado: string; mensaje: string }> {
+  const res = await fetch(`${API_URL}/api/ecf/${id}/cancel`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ motivo }),
+  });
+  return handleResponse(res);
+}
+
+// ── DGII ─────────────────────────────────────────────────────────────────────
+
+export async function authenticateDgii(
+  rncEmisor: string,
+  usuario: string,
+  clave: string,
+): Promise<{ token: string; expiresIn: number }> {
+  const res = await fetch(`${API_URL}/api/dgii/authenticate`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ rncEmisor, usuario, clave }),
+  });
+  return handleResponse(res);
+}
+
 // ── Reportes ─────────────────────────────────────────────────────────────────
 
 export interface ReporteFiltros {

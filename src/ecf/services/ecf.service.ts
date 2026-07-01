@@ -8,11 +8,13 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Ecf } from '../entities/ecf.entity';
 import { LineaEcf } from '../entities/linea-ecf.entity';
+import { User } from '../../auth/entities/user.entity';
 import { CreateEcfDto } from '../dto/create-ecf.dto';
 import { UpdateEcfDto } from '../dto/update-ecf.dto';
 import { XsdValidatorService } from '../../validation/xsd-validator.service';
 import { EcfXmlService } from './ecf-xml.service';
 import { EcfSigningService } from './ecf-signing.service';
+import { DgiiService } from '../../dgii/dgii.service';
 
 @Injectable()
 export class EcfService {
@@ -21,9 +23,12 @@ export class EcfService {
     private ecfRepository: Repository<Ecf>,
     @InjectRepository(LineaEcf)
     private lineaRepository: Repository<LineaEcf>,
+    @InjectRepository(User)
+    private userRepository: Repository<User>,
     private validatorService: XsdValidatorService,
     private xmlService: EcfXmlService,
     private signingService: EcfSigningService,
+    private dgiiService: DgiiService,
   ) {}
 
   async create(dto: CreateEcfDto, usuarioId: string) {
@@ -294,6 +299,104 @@ export class EcfService {
       xmlFirmado,
       mensaje: 'Comprobante firmado exitosamente con XMLDSig (RSA-2048 / SHA-256)',
       advertencias: validation.warnings,
+    };
+  }
+
+  // ── Transmisión a la DGII ────────────────────────────────────────────────────
+
+  private async obtenerTokenDgii(usuarioId: string): Promise<string> {
+    const usuario = await this.userRepository.findOne({ where: { id: usuarioId } });
+    if (!usuario?.tokenDgii) {
+      throw new BadRequestException(
+        'Debes autenticarte con la DGII primero (POST /dgii/authenticate)',
+      );
+    }
+    return usuario.tokenDgii;
+  }
+
+  async transmitEcf(id: string, usuarioId: string) {
+    const ecf = await this.findOne(id, usuarioId);
+
+    if (ecf.estado !== 'signed') {
+      throw new BadRequestException(
+        `Solo se pueden transmitir comprobantes firmados (estado actual: ${ecf.estado})`,
+      );
+    }
+
+    const token = await this.obtenerTokenDgii(usuarioId);
+    const resultado = await this.dgiiService.transmitEcf(ecf, token);
+
+    ecf.uuid = resultado.uuid;
+    ecf.codigoSeguridadDgii = resultado.codigo;
+    ecf.estado = 'transmitted';
+    await this.ecfRepository.save(ecf);
+
+    return {
+      id: ecf.id,
+      estado: ecf.estado,
+      uuid: ecf.uuid,
+      codigoSeguridadDgii: ecf.codigoSeguridadDgii,
+      mensajes: resultado.mensajes,
+    };
+  }
+
+  // ── Consulta de estado en la DGII ────────────────────────────────────────────
+
+  async checkStatus(id: string, usuarioId: string) {
+    const ecf = await this.findOne(id, usuarioId);
+
+    if (!ecf.uuid) {
+      throw new BadRequestException(
+        'Este comprobante aún no ha sido transmitido a la DGII',
+      );
+    }
+
+    const token = await this.obtenerTokenDgii(usuarioId);
+    const resultado = await this.dgiiService.queryEcfStatus(ecf.uuid, token);
+
+    const ESTADO_DGII_A_LOCAL: Record<string, string> = {
+      Aceptado: 'accepted',
+      Rechazado: 'rejected',
+      Cancelado: 'cancelled',
+    };
+    const nuevoEstado = ESTADO_DGII_A_LOCAL[resultado.estado];
+    if (nuevoEstado) {
+      ecf.estado = nuevoEstado;
+      await this.ecfRepository.save(ecf);
+    }
+
+    return {
+      id: ecf.id,
+      estado: ecf.estado,
+      estadoDgii: resultado.estado,
+      mensaje: resultado.mensaje,
+    };
+  }
+
+  // ── Cancelación en la DGII ───────────────────────────────────────────────────
+
+  async cancelEcf(id: string, usuarioId: string, motivo: string) {
+    const ecf = await this.findOne(id, usuarioId);
+
+    if (!ecf.uuid) {
+      throw new BadRequestException(
+        'Solo se pueden cancelar comprobantes ya transmitidos a la DGII',
+      );
+    }
+    if (ecf.estado === 'cancelled') {
+      throw new BadRequestException('Este comprobante ya está cancelado');
+    }
+
+    const token = await this.obtenerTokenDgii(usuarioId);
+    const resultado = await this.dgiiService.cancelEcf(ecf.uuid, motivo, token);
+
+    ecf.estado = 'cancelled';
+    await this.ecfRepository.save(ecf);
+
+    return {
+      id: ecf.id,
+      estado: ecf.estado,
+      mensaje: resultado.mensaje,
     };
   }
 }

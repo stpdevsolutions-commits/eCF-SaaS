@@ -16,6 +16,7 @@ export default function Navbar() {
     { href: '/dashboard', label: 'Comprobantes' },
     { href: '/ecf/nueva', label: 'Nuevo e-CF' },
     { href: '/reportes', label: 'Reportes' },
+    { href: '/dgii', label: 'DGII' },
   ];
 
   return (

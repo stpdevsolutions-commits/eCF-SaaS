@@ -4,6 +4,7 @@ import {
   Get,
   Body,
   Param,
+  Request,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -11,7 +12,10 @@ import {
   ApiBearerAuth,
   ApiOperation,
 } from '@nestjs/swagger';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import { DgiiService } from './dgii.service';
+import { User } from '../auth/entities/user.entity';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 
 @ApiTags('Integración DGII')
@@ -19,18 +23,30 @@ import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 @UseGuards(JwtAuthGuard)
 @ApiBearerAuth()
 export class DgiiController {
-  constructor(private dgiiService: DgiiService) {}
+  constructor(
+    private dgiiService: DgiiService,
+    @InjectRepository(User)
+    private userRepository: Repository<User>,
+  ) {}
 
   @Post('authenticate')
-  @ApiOperation({ summary: 'Autenticar con DGII' })
+  @ApiOperation({ summary: 'Autenticar con DGII y guardar el token en la cuenta' })
   async authenticate(
     @Body() body: { rncEmisor: string; usuario: string; clave: string },
+    @Request() req: any,
   ) {
-    return await this.dgiiService.authenticate(
+    const resultado = await this.dgiiService.authenticate(
       body.rncEmisor,
       body.usuario,
       body.clave,
     );
+
+    await this.userRepository.update(req.user.id, {
+      tokenDgii: resultado.token,
+      certificadoDgii: true,
+    });
+
+    return resultado;
   }
 
   @Get('status/:uuid')

@@ -116,4 +116,26 @@ export class EcfController {
   async sign(@Param('id') id: string, @Request() req: any) {
     return await this.ecfService.signEcf(id, req.user.id);
   }
+
+  @Post(':id/transmit')
+  @ApiOperation({ summary: 'Transmitir comprobante firmado a la DGII' })
+  async transmit(@Param('id') id: string, @Request() req: any) {
+    return await this.ecfService.transmitEcf(id, req.user.id);
+  }
+
+  @Get(':id/status')
+  @ApiOperation({ summary: 'Consultar estado del comprobante en la DGII' })
+  async status(@Param('id') id: string, @Request() req: any) {
+    return await this.ecfService.checkStatus(id, req.user.id);
+  }
+
+  @Post(':id/cancel')
+  @ApiOperation({ summary: 'Cancelar comprobante transmitido en la DGII' })
+  async cancel(
+    @Param('id') id: string,
+    @Body() body: { motivo: string },
+    @Request() req: any,
+  ) {
+    return await this.ecfService.cancelEcf(id, req.user.id, body.motivo);
+  }
 }
