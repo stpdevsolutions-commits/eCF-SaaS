@@ -46,6 +46,7 @@ export class Ecf {
     type: 'enum',
     enum: [
       'draft',
+      'validated',
       'signed',
       'transmitted',
       'accepted',
