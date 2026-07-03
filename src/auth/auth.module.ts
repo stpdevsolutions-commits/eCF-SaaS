@@ -7,6 +7,7 @@ import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { JwtStrategy } from './jwt.strategy';
 import { User } from './entities/user.entity';
+import { getJwtSecret } from './jwt-secret.util';
 
 @Module({
   imports: [
@@ -16,7 +17,7 @@ import { User } from './entities/user.entity';
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({
-        secret: configService.get('JWT_SECRET') || 'secret',
+        secret: getJwtSecret(configService),
         signOptions: {
           expiresIn: configService.get('JWT_EXPIRATION') || '24h',
         },

@@ -17,15 +17,24 @@ import { LineaEcf } from './linea-ecf.entity';
 @Index(['rncComprador'])
 @Index(['estado'])
 @Index(['fechaEmision'])
+@Index(['encf'])
 export class Ecf {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
-  @Column({ type: 'varchar', length: 10 })
-  tipoEcf!: string; // e31, e32, e33, e34, e41, e43, e44, e45, e46, e47
+  @Column({ type: 'varchar', length: 20 })
+  tipoEcf!: string; // e-CF_31_v_1_0 … e-CF_47_v_1_0
 
   @Column({ type: 'varchar', length: 10, default: 'v1.0' })
   version!: string;
+
+  /**
+   * eNCF asignado (E + tipo 2 dígitos + secuencia 10 dígitos, ej. E310000000001).
+   * Se asigna UNA sola vez (al generar el XML por primera vez) y se reutiliza
+   * en firmas/regeneraciones posteriores.
+   */
+  @Column({ type: 'varchar', length: 13, nullable: true })
+  encf?: string;
 
   @Column({ type: 'timestamp' })
   fechaEmision!: Date;
@@ -46,6 +55,7 @@ export class Ecf {
     type: 'enum',
     enum: [
       'draft',
+      'validated',
       'signed',
       'transmitted',
       'accepted',

@@ -5,13 +5,14 @@ import {
   ApiResponse,
   ApiBearerAuth,
 } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 
 @ApiTags('Autenticación')
-@Controller('api/auth')
+@Controller('auth')
 export class AuthController {
   constructor(private authService: AuthService) {}
 
@@ -26,6 +27,7 @@ export class AuthController {
   }
 
   @Post('login')
+  @Throttle({ default: { limit: 5, ttl: 60_000 } }) // máx 5 intentos de login por minuto por IP
   @ApiOperation({ summary: 'Login de usuario' })
   async login(@Body() dto: LoginDto) {
     return await this.authService.login(dto);

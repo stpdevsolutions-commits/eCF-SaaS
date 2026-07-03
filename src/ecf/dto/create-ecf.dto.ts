@@ -3,40 +3,54 @@ import {
   IsNumber,
   IsArray,
   IsOptional,
+  IsIn,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class CreateLineaEcfDto {
   @IsString()
-  descripcion: string;
+  descripcion!: string;
 
   @IsNumber()
-  cantidad: number;
+  cantidad!: number;
 
   @IsNumber()
-  precioUnitario: number;
+  precioUnitario!: number;
 
   @IsNumber()
   @IsOptional()
   descuentoLinea?: number;
+
+  // Retención: 1 = Retención, 2 = Percepción (requerido por el XSD cuando tipoEcf es e-CF_41)
+  @IsIn([1, 2])
+  @IsOptional()
+  indicadorAgenteRetencionoPercepcion?: number;
+
+  @IsNumber()
+  @IsOptional()
+  montoItbisRetenido?: number;
+
+  @IsNumber()
+  @IsOptional()
+  montoIsrRetenido?: number;
 }
 
 export class CreateEcfDto {
   @IsString()
-  tipoEcf: string;
+  tipoEcf!: string;
 
   @IsString()
-  rncEmisor: string;
+  rncEmisor!: string;
 
   @IsString()
-  nombreEmisor: string;
+  nombreEmisor!: string;
 
   @IsString()
-  rncComprador: string;
+  rncComprador!: string;
 
   @IsString()
-  nombreComprador: string;
+  nombreComprador!: string;
 
   @IsString()
   @IsOptional()
@@ -45,5 +59,5 @@ export class CreateEcfDto {
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => CreateLineaEcfDto)
-  lineas: CreateLineaEcfDto[];
+  lineas!: CreateLineaEcfDto[];
 }
