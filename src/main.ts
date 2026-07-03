@@ -7,7 +7,11 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   app.setGlobalPrefix('api');
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
-  app.enableCors({ origin: '*', credentials: true });
+  const corsOrigins = (process.env.CORS_ORIGIN || 'http://localhost:3005')
+    .split(',')
+    .map(origin => origin.trim())
+    .filter(origin => origin.length > 0);
+  app.enableCors({ origin: corsOrigins, credentials: true });
 
   const config = new DocumentBuilder()
     .setTitle('eCF SaaS API')
