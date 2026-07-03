@@ -10,9 +10,11 @@ import {
   JoinColumn,
 } from 'typeorm';
 import { User } from '../../auth/entities/user.entity';
+import { Empresa } from '../../empresa/entities/empresa.entity';
 import { LineaEcf } from './linea-ecf.entity';
 
 @Entity('ecf')
+@Index(['empresaId'])
 @Index(['rncEmisor'])
 @Index(['rncComprador'])
 @Index(['estado'])
@@ -96,6 +98,18 @@ export class Ecf {
   @Column({ type: 'text', nullable: true })
   xmlValidacion?: string;
 
+  /**
+   * Empresa emisora: los e-CF se comparten entre todos los usuarios de la
+   * misma empresa (scoping de todos los queries).
+   */
+  @Column({ name: 'empresa_id', type: 'uuid', nullable: true })
+  empresaId?: string;
+
+  @ManyToOne(() => Empresa)
+  @JoinColumn({ name: 'empresa_id' })
+  empresa?: Empresa;
+
+  /** Usuario que creó el comprobante ("creado por"), ya no se usa para scoping. */
   @ManyToOne(() => User, (user) => user.ecfs)
   @JoinColumn({ name: 'usuario_id' })
   usuario!: User;

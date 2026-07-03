@@ -33,7 +33,11 @@ export class EcfService {
     private dgiiService: DgiiService,
   ) {}
 
-  async create(dto: CreateEcfDto, usuarioId: string) {
+  /**
+   * Crea un e-CF a nombre de la empresa (scoping) registrando además el
+   * usuario que lo creó (`usuario_id` = "creado por").
+   */
+  async create(dto: CreateEcfDto, usuarioId: string, empresaId: string) {
     const validation = this.validatorService.validateEcf(dto as any);
 
     if (!validation.valid) {
@@ -81,6 +85,7 @@ export class EcfService {
       moneda: dto.moneda || 'RD',
       estado: 'draft',
       usuario: { id: usuarioId } as any,
+      empresaId,
     });
 
     const ecfGuardado = await this.ecfRepository.save(ecf);
@@ -96,10 +101,10 @@ export class EcfService {
     return { ...ecfGuardado, lineas };
   }
 
-  async findAll(usuarioId: string, filters?: { estado?: string; rncComprador?: string }) {
+  async findAll(empresaId: string, filters?: { estado?: string; rncComprador?: string }) {
     let query = this.ecfRepository
       .createQueryBuilder('ecf')
-      .where('ecf.usuario_id = :usuarioId', { usuarioId })
+      .where('ecf.empresa_id = :empresaId', { empresaId })
       .leftJoinAndSelect('ecf.lineas', 'lineas');
 
     if (filters?.estado) {
@@ -115,9 +120,9 @@ export class EcfService {
     return await query.orderBy('ecf.createdAt', 'DESC').getMany();
   }
 
-  async findOne(id: string, usuarioId: string) {
+  async findOne(id: string, empresaId: string) {
     const ecf = await this.ecfRepository.findOne({
-      where: { id, usuario: { id: usuarioId } },
+      where: { id, empresaId },
       relations: ['lineas'],
     });
 
@@ -128,8 +133,8 @@ export class EcfService {
     return ecf;
   }
 
-  async update(id: string, dto: UpdateEcfDto, usuarioId: string) {
-    const ecf = await this.findOne(id, usuarioId);
+  async update(id: string, dto: UpdateEcfDto, empresaId: string) {
+    const ecf = await this.findOne(id, empresaId);
 
     if (ecf.estado !== 'draft') {
       throw new UnauthorizedException('Solo se pueden editar comprobantes en borrador');
@@ -139,8 +144,8 @@ export class EcfService {
     return await this.ecfRepository.save(ecf);
   }
 
-  async remove(id: string, usuarioId: string) {
-    const ecf = await this.findOne(id, usuarioId);
+  async remove(id: string, empresaId: string) {
+    const ecf = await this.findOne(id, empresaId);
 
     if (ecf.estado !== 'draft') {
       throw new UnauthorizedException('Solo se pueden eliminar comprobantes en borrador');
@@ -159,12 +164,12 @@ export class EcfService {
    * sola vez: si el ECF ya tiene `encf` (asignado en una validación previa),
    * se reutiliza y NO se incrementa el contador.
    */
-  private async asignarEncf(ecf: Ecf, usuarioId: string): Promise<void> {
+  private async asignarEncf(ecf: Ecf, empresaId: string): Promise<void> {
     if (ecf.encf) {
       return;
     }
     const secuencia = await this.ncfSequenceService.nextSequence(
-      usuarioId,
+      empresaId,
       ecf.tipoEcf,
     );
     ecf.encf = this.xmlService.buildEncf(ecf.tipoEcf, secuencia);
@@ -172,8 +177,8 @@ export class EcfService {
 
   // ── Validación ──────────────────────────────────────────────────────────────
 
-  async validateEcf(id: string, usuarioId: string) {
-    const ecf = await this.findOne(id, usuarioId);
+  async validateEcf(id: string, empresaId: string) {
+    const ecf = await this.findOne(id, empresaId);
 
     if (!['draft', 'validated'].includes(ecf.estado)) {
       throw new BadRequestException(
@@ -181,7 +186,7 @@ export class EcfService {
       );
     }
 
-    await this.asignarEncf(ecf, usuarioId);
+    await this.asignarEncf(ecf, empresaId);
     const xml = this.xmlService.generateXml(ecf);
     const result = this.validatorService.validateXmlStructure(xml, ecf.tipoEcf);
 
@@ -195,12 +200,12 @@ export class EcfService {
   // ── Reportes ────────────────────────────────────────────────────────────────
 
   private queryConFiltros(
-    usuarioId: string,
+    empresaId: string,
     filters?: { desde?: string; hasta?: string; estado?: string },
   ) {
     const query = this.ecfRepository
       .createQueryBuilder('ecf')
-      .where('ecf.usuario_id = :usuarioId', { usuarioId });
+      .where('ecf.empresa_id = :empresaId', { empresaId });
 
     if (filters?.desde) {
       query.andWhere('ecf.fechaEmision >= :desde', { desde: filters.desde });
@@ -216,10 +221,10 @@ export class EcfService {
   }
 
   async getResumen(
-    usuarioId: string,
+    empresaId: string,
     filters?: { desde?: string; hasta?: string; estado?: string },
   ) {
-    const comprobantes = await this.queryConFiltros(usuarioId, filters).getMany();
+    const comprobantes = await this.queryConFiltros(empresaId, filters).getMany();
 
     const totales = comprobantes.reduce(
       (acc, e) => {
@@ -244,10 +249,10 @@ export class EcfService {
   }
 
   async exportCsv(
-    usuarioId: string,
+    empresaId: string,
     filters?: { desde?: string; hasta?: string; estado?: string },
   ): Promise<string> {
-    const comprobantes = await this.queryConFiltros(usuarioId, filters)
+    const comprobantes = await this.queryConFiltros(empresaId, filters)
       .orderBy('ecf.fechaEmision', 'DESC')
       .getMany();
 
@@ -287,8 +292,8 @@ export class EcfService {
 
   // ── Firma digital ───────────────────────────────────────────────────────────
 
-  async signEcf(id: string, usuarioId: string) {
-    const ecf = await this.findOne(id, usuarioId);
+  async signEcf(id: string, empresaId: string) {
+    const ecf = await this.findOne(id, empresaId);
 
     if (!['draft', 'validated'].includes(ecf.estado)) {
       throw new BadRequestException(
@@ -301,7 +306,7 @@ export class EcfService {
     // consume una secuencia nueva cuando el ECF nunca ha tenido una).
     let xmlSinFirmar = ecf.xmlValidacion;
     if (!xmlSinFirmar) {
-      await this.asignarEncf(ecf, usuarioId);
+      await this.asignarEncf(ecf, empresaId);
       xmlSinFirmar = this.xmlService.generateXml(ecf);
     }
 
@@ -342,8 +347,12 @@ export class EcfService {
     return usuario.tokenDgii;
   }
 
-  async transmitEcf(id: string, usuarioId: string) {
-    const ecf = await this.findOne(id, usuarioId);
+  /**
+   * @param empresaId empresa del usuario autenticado (scoping del e-CF)
+   * @param usuarioId usuario autenticado (dueño del token DGII a usar)
+   */
+  async transmitEcf(id: string, empresaId: string, usuarioId: string) {
+    const ecf = await this.findOne(id, empresaId);
 
     if (ecf.estado !== 'signed') {
       throw new BadRequestException(
@@ -370,8 +379,8 @@ export class EcfService {
 
   // ── Consulta de estado en la DGII ────────────────────────────────────────────
 
-  async checkStatus(id: string, usuarioId: string) {
-    const ecf = await this.findOne(id, usuarioId);
+  async checkStatus(id: string, empresaId: string, usuarioId: string) {
+    const ecf = await this.findOne(id, empresaId);
 
     if (!ecf.uuid) {
       throw new BadRequestException(
@@ -403,8 +412,8 @@ export class EcfService {
 
   // ── Cancelación en la DGII ───────────────────────────────────────────────────
 
-  async cancelEcf(id: string, usuarioId: string, motivo: string) {
-    const ecf = await this.findOne(id, usuarioId);
+  async cancelEcf(id: string, empresaId: string, usuarioId: string, motivo: string) {
+    const ecf = await this.findOne(id, empresaId);
 
     if (!ecf.uuid) {
       throw new BadRequestException(

@@ -5,9 +5,12 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   OneToMany,
+  ManyToOne,
+  JoinColumn,
   Index,
 } from 'typeorm';
 import { Ecf } from '../../ecf/entities/ecf.entity';
+import { Empresa } from '../../empresa/entities/empresa.entity';
 
 @Entity('users')
 @Index(['email'], { unique: true })
@@ -25,8 +28,28 @@ export class User {
   @Column({ type: 'varchar' })
   password!: string;
 
-  @Column({ type: 'varchar', length: 20, unique: true })
-  numeroRegistro!: string; // RNC o Cédula
+  /**
+   * LEGACY: el RNC/Cédula del emisor ahora vive en Empresa.rnc.
+   * Se conserva (nullable) para compatibilidad; los usuarios "member"
+   * creados vía POST /empresa/usuarios no lo tienen.
+   */
+  @Column({ type: 'varchar', length: 20, unique: true, nullable: true })
+  numeroRegistro?: string; // RNC o Cédula (legacy)
+
+  /** Empresa a la que pertenece el usuario. Fuente de verdad fiscal. */
+  @Column({ name: 'empresa_id', type: 'uuid', nullable: true })
+  empresaId?: string;
+
+  @ManyToOne(() => Empresa)
+  @JoinColumn({ name: 'empresa_id' })
+  empresa?: Empresa;
+
+  @Column({
+    type: 'enum',
+    enum: ['admin', 'member'],
+    default: 'admin', // default admin para compatibilidad con usuarios pre-existentes
+  })
+  rol!: string;
 
   @Column({
     type: 'enum',

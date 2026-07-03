@@ -7,6 +7,7 @@ import * as Joi from 'joi';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
+import { EmpresaModule } from './empresa/empresa.module';
 import { EcfModule } from './ecf/ecf.module';
 import { ValidationModule } from './validation/validation.module';
 import { DgiiModule } from './dgii/dgii.module';
@@ -71,6 +72,7 @@ import { LineaEcf } from './ecf/entities/linea-ecf.entity';
       }),
     }),
     AuthModule,
+    EmpresaModule,
     EcfModule,
     ValidationModule,
     DgiiModule,

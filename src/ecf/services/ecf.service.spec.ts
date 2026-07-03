@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { EcfService } from './ecf.service';
@@ -164,10 +164,37 @@ describe('EcfService', () => {
       mockLineaRepository.create.mockReturnValue({});
       mockLineaRepository.save.mockResolvedValue([]);
 
-      const result = await service.create(createDto as any, 'user-id');
+      const result = await service.create(createDto as any, 'user-id', 'empresa-id');
 
       expect(result).toBeDefined();
       expect(mockValidatorService.validateEcf).toHaveBeenCalled();
+    });
+
+    it('asigna la empresa (scoping) y el usuario creador al crear', async () => {
+      const createDto = {
+        tipoEcf: 'e-CF_31_v_1_0',
+        rncEmisor: '12345678901',
+        nombreEmisor: 'Empresa Emisora',
+        rncComprador: '98765432109',
+        nombreComprador: 'Cliente',
+        lineas: [{ descripcion: 'Producto A', cantidad: 1, precioUnitario: 1000 }],
+      };
+
+      mockEcfRepository.create.mockImplementation((data: any) => data);
+      mockEcfRepository.save.mockImplementation((data: any) =>
+        Promise.resolve({ id: '1', ...data }),
+      );
+      mockLineaRepository.create.mockReturnValue({});
+      mockLineaRepository.save.mockResolvedValue({});
+
+      await service.create(createDto as any, 'user-id', 'empresa-id');
+
+      expect(mockEcfRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          empresaId: 'empresa-id',
+          usuario: { id: 'user-id' },
+        }),
+      );
     });
   });
 
@@ -179,15 +206,58 @@ describe('EcfService', () => {
         rncEmisor: '12345678901',
         rncComprador: '98765432109',
         estado: 'draft',
-        usuario: { id: 'user-id' },
+        empresaId: 'empresa-id',
       };
 
       mockEcfRepository.findOne.mockResolvedValue(mockEcf);
       mockEcfRepository.save.mockResolvedValue(mockEcf);
 
-      const result = await service.validateEcf('1', 'user-id');
+      const result = await service.validateEcf('1', 'empresa-id');
 
       expect(result.valid).toBe(true);
+    });
+  });
+
+  describe('scoping por empresa', () => {
+    it('findOne busca por (id, empresaId), no por usuario', async () => {
+      mockEcfRepository.findOne.mockResolvedValue({ id: '1', empresaId: 'empresa-A' });
+
+      await service.findOne('1', 'empresa-A');
+
+      expect(mockEcfRepository.findOne).toHaveBeenCalledWith({
+        where: { id: '1', empresaId: 'empresa-A' },
+        relations: ['lineas'],
+      });
+    });
+
+    it('findOne lanza NotFound si el e-CF pertenece a otra empresa', async () => {
+      mockEcfRepository.findOne.mockResolvedValue(null);
+
+      await expect(service.findOne('1', 'otra-empresa')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('findAll filtra por empresa_id', async () => {
+      const qb = mockQueryBuilder([]);
+      mockEcfRepository.createQueryBuilder.mockReturnValue(qb);
+
+      await service.findAll('empresa-A');
+
+      expect(qb.where).toHaveBeenCalledWith('ecf.empresa_id = :empresaId', {
+        empresaId: 'empresa-A',
+      });
+    });
+
+    it('getResumen filtra por empresa_id', async () => {
+      const qb = mockQueryBuilder([]);
+      mockEcfRepository.createQueryBuilder.mockReturnValue(qb);
+
+      await service.getResumen('empresa-A');
+
+      expect(qb.where).toHaveBeenCalledWith('ecf.empresa_id = :empresaId', {
+        empresaId: 'empresa-A',
+      });
     });
   });
 
@@ -198,6 +268,7 @@ describe('EcfService', () => {
       estado: 'draft',
       encf: null,
       xmlValidacion: null,
+      empresaId: 'empresa-id',
       usuario: { id: 'user-id' },
       ...extra,
     });
@@ -211,11 +282,11 @@ describe('EcfService', () => {
       mockEcfRepository.findOne.mockResolvedValue(ecf);
       mockNcfSequenceService.nextSequence.mockResolvedValue(7);
 
-      const result = await service.validateEcf('1', 'user-id');
+      const result = await service.validateEcf('1', 'empresa-id');
 
       expect(mockNcfSequenceService.nextSequence).toHaveBeenCalledTimes(1);
       expect(mockNcfSequenceService.nextSequence).toHaveBeenCalledWith(
-        'user-id',
+        'empresa-id',
         'e-CF_31_v_1_0',
       );
       expect(mockXmlService.buildEncf).toHaveBeenCalledWith('e-CF_31_v_1_0', 7);
@@ -230,7 +301,7 @@ describe('EcfService', () => {
       const ecf = baseEcf({ estado: 'validated', encf: 'E310000000007' });
       mockEcfRepository.findOne.mockResolvedValue(ecf);
 
-      const result = await service.validateEcf('1', 'user-id');
+      const result = await service.validateEcf('1', 'empresa-id');
 
       expect(mockNcfSequenceService.nextSequence).not.toHaveBeenCalled();
       expect(ecf.encf).toBe('E310000000007');
@@ -241,7 +312,7 @@ describe('EcfService', () => {
       const ecf = baseEcf({ estado: 'validated', encf: 'E310000000007' });
       mockEcfRepository.findOne.mockResolvedValue(ecf);
 
-      const result = await service.signEcf('1', 'user-id');
+      const result = await service.signEcf('1', 'empresa-id');
 
       // No debe consumir una secuencia nueva ni cambiar el eNCF asignado
       expect(mockNcfSequenceService.nextSequence).not.toHaveBeenCalled();
@@ -259,7 +330,7 @@ describe('EcfService', () => {
       });
       mockEcfRepository.findOne.mockResolvedValue(ecf);
 
-      await service.signEcf('1', 'user-id');
+      await service.signEcf('1', 'empresa-id');
 
       expect(mockNcfSequenceService.nextSequence).not.toHaveBeenCalled();
       expect(mockXmlService.generateXml).not.toHaveBeenCalled();
@@ -271,7 +342,7 @@ describe('EcfService', () => {
       mockEcfRepository.findOne.mockResolvedValue(ecf);
       mockNcfSequenceService.nextSequence.mockResolvedValue(3);
 
-      const result = await service.signEcf('1', 'user-id');
+      const result = await service.signEcf('1', 'empresa-id');
 
       expect(mockNcfSequenceService.nextSequence).toHaveBeenCalledTimes(1);
       expect(ecf.encf).toBe('E310000000003');
@@ -288,8 +359,8 @@ describe('EcfService', () => {
         .mockResolvedValueOnce(1)
         .mockResolvedValueOnce(2);
 
-      await service.validateEcf('1', 'user-id');
-      await service.validateEcf('2', 'user-id');
+      await service.validateEcf('1', 'empresa-id');
+      await service.validateEcf('2', 'empresa-id');
 
       expect(mockNcfSequenceService.nextSequence).toHaveBeenCalledTimes(2);
       expect(ecf1.encf).toBe('E310000000001');
@@ -307,7 +378,7 @@ describe('EcfService', () => {
       });
 
       await expect(
-        service.create({ lineas: [] } as any, 'user-id'),
+        service.create({ lineas: [] } as any, 'user-id', 'empresa-id'),
       ).rejects.toThrow(BadRequestException);
 
       expect(mockEcfRepository.create).not.toHaveBeenCalled();
@@ -341,7 +412,7 @@ describe('EcfService', () => {
       mockLineaRepository.create.mockReturnValue({});
       mockLineaRepository.save.mockResolvedValue({});
 
-      await service.create(createDto as any, 'user-id');
+      await service.create(createDto as any, 'user-id', 'empresa-id');
 
       expect(mockEcfRepository.create).toHaveBeenCalledWith(
         expect.objectContaining({ montoItbisRetenido: 50, montoRentaRetenido: 100 }),
@@ -365,7 +436,7 @@ describe('EcfService', () => {
       mockLineaRepository.create.mockReturnValue({});
       mockLineaRepository.save.mockResolvedValue({});
 
-      await service.create(createDto as any, 'user-id');
+      await service.create(createDto as any, 'user-id', 'empresa-id');
 
       expect(mockEcfRepository.create).toHaveBeenCalledWith(
         expect.objectContaining({ montoItbisRetenido: 0, montoRentaRetenido: 0 }),
@@ -395,7 +466,7 @@ describe('EcfService', () => {
       ];
       mockEcfRepository.createQueryBuilder.mockReturnValue(mockQueryBuilder(comprobantes));
 
-      const result = await service.getResumen('user-id');
+      const result = await service.getResumen('empresa-id');
 
       expect(result.cantidad).toBe(2);
       expect(result.montoTotal).toBe(7080);
@@ -408,7 +479,7 @@ describe('EcfService', () => {
     it('devuelve ceros y objetos vacíos cuando no hay comprobantes', async () => {
       mockEcfRepository.createQueryBuilder.mockReturnValue(mockQueryBuilder([]));
 
-      const result = await service.getResumen('user-id', { estado: 'draft' });
+      const result = await service.getResumen('empresa-id', { estado: 'draft' });
 
       expect(result).toEqual({
         cantidad: 0,
@@ -440,7 +511,7 @@ describe('EcfService', () => {
       ];
       mockEcfRepository.createQueryBuilder.mockReturnValue(mockQueryBuilder(comprobantes));
 
-      const csv = await service.exportCsv('user-id');
+      const csv = await service.exportCsv('empresa-id');
       const [header, fila] = csv.split('\n');
 
       expect(header).toBe(
@@ -453,7 +524,7 @@ describe('EcfService', () => {
     it('devuelve solo el header cuando no hay comprobantes', async () => {
       mockEcfRepository.createQueryBuilder.mockReturnValue(mockQueryBuilder([]));
 
-      const csv = await service.exportCsv('user-id');
+      const csv = await service.exportCsv('empresa-id');
 
       expect(csv.split('\n')).toHaveLength(1);
     });
@@ -463,7 +534,7 @@ describe('EcfService', () => {
     it('rechaza si el comprobante no está firmado', async () => {
       mockEcfRepository.findOne.mockResolvedValue({ id: '1', estado: 'draft' });
 
-      await expect(service.transmitEcf('1', 'user-id')).rejects.toThrow(
+      await expect(service.transmitEcf('1', 'empresa-id', 'user-id')).rejects.toThrow(
         BadRequestException,
       );
       expect(mockDgiiService.transmitEcf).not.toHaveBeenCalled();
@@ -473,7 +544,7 @@ describe('EcfService', () => {
       mockEcfRepository.findOne.mockResolvedValue({ id: '1', estado: 'signed' });
       mockUserRepository.findOne.mockResolvedValue({ id: 'user-id', tokenDgii: null });
 
-      await expect(service.transmitEcf('1', 'user-id')).rejects.toThrow(
+      await expect(service.transmitEcf('1', 'empresa-id', 'user-id')).rejects.toThrow(
         BadRequestException,
       );
       expect(mockDgiiService.transmitEcf).not.toHaveBeenCalled();
@@ -490,7 +561,7 @@ describe('EcfService', () => {
       });
       mockEcfRepository.save.mockImplementation((data: any) => Promise.resolve(data));
 
-      const result = await service.transmitEcf('1', 'user-id');
+      const result = await service.transmitEcf('1', 'empresa-id', 'user-id');
 
       expect(mockDgiiService.transmitEcf).toHaveBeenCalledWith(mockEcf, 'tok-123');
       expect(result).toEqual({
@@ -507,7 +578,7 @@ describe('EcfService', () => {
     it('rechaza si el comprobante no tiene uuid (no transmitido)', async () => {
       mockEcfRepository.findOne.mockResolvedValue({ id: '1', estado: 'signed', uuid: null });
 
-      await expect(service.checkStatus('1', 'user-id')).rejects.toThrow(
+      await expect(service.checkStatus('1', 'empresa-id', 'user-id')).rejects.toThrow(
         BadRequestException,
       );
       expect(mockDgiiService.queryEcfStatus).not.toHaveBeenCalled();
@@ -517,7 +588,7 @@ describe('EcfService', () => {
       mockEcfRepository.findOne.mockResolvedValue({ id: '1', estado: 'transmitted', uuid: 'uuid-abc' });
       mockUserRepository.findOne.mockResolvedValue({ id: 'user-id', tokenDgii: null });
 
-      await expect(service.checkStatus('1', 'user-id')).rejects.toThrow(
+      await expect(service.checkStatus('1', 'empresa-id', 'user-id')).rejects.toThrow(
         BadRequestException,
       );
     });
@@ -534,7 +605,7 @@ describe('EcfService', () => {
       });
       mockEcfRepository.save.mockImplementation((data: any) => Promise.resolve(data));
 
-      const result = await service.checkStatus('1', 'user-id');
+      const result = await service.checkStatus('1', 'empresa-id', 'user-id');
 
       expect(mockDgiiService.queryEcfStatus).toHaveBeenCalledWith('uuid-abc', 'tok-123');
       expect(result.estado).toBe('accepted');
@@ -552,7 +623,7 @@ describe('EcfService', () => {
         mensaje: 'En proceso de validación',
       });
 
-      const result = await service.checkStatus('1', 'user-id');
+      const result = await service.checkStatus('1', 'empresa-id', 'user-id');
 
       expect(result.estado).toBe('transmitted');
       expect(mockEcfRepository.save).not.toHaveBeenCalled();
@@ -563,9 +634,9 @@ describe('EcfService', () => {
     it('rechaza si el comprobante no tiene uuid', async () => {
       mockEcfRepository.findOne.mockResolvedValue({ id: '1', estado: 'signed', uuid: null });
 
-      await expect(service.cancelEcf('1', 'user-id', 'motivo')).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(
+        service.cancelEcf('1', 'empresa-id', 'user-id', 'motivo'),
+      ).rejects.toThrow(BadRequestException);
       expect(mockDgiiService.cancelEcf).not.toHaveBeenCalled();
     });
 
@@ -576,9 +647,9 @@ describe('EcfService', () => {
         uuid: 'uuid-abc',
       });
 
-      await expect(service.cancelEcf('1', 'user-id', 'motivo')).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(
+        service.cancelEcf('1', 'empresa-id', 'user-id', 'motivo'),
+      ).rejects.toThrow(BadRequestException);
     });
 
     it('cancela y actualiza el estado cuando todo es válido', async () => {
@@ -593,7 +664,12 @@ describe('EcfService', () => {
       });
       mockEcfRepository.save.mockImplementation((data: any) => Promise.resolve(data));
 
-      const result = await service.cancelEcf('1', 'user-id', 'Error en el monto');
+      const result = await service.cancelEcf(
+        '1',
+        'empresa-id',
+        'user-id',
+        'Error en el monto',
+      );
 
       expect(mockDgiiService.cancelEcf).toHaveBeenCalledWith(
         'uuid-abc',

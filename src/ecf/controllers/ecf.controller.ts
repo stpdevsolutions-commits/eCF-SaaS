@@ -33,7 +33,7 @@ export class EcfController {
   @Post()
   @ApiOperation({ summary: 'Crear nuevo comprobante fiscal' })
   async create(@Body() dto: CreateEcfDto, @Request() req: any) {
-    return await this.ecfService.create(dto, req.user.id);
+    return await this.ecfService.create(dto, req.user.id, req.user.empresaId);
   }
 
   @Get()
@@ -45,7 +45,7 @@ export class EcfController {
     @Query('estado') estado?: string,
     @Query('rncComprador') rncComprador?: string,
   ) {
-    return await this.ecfService.findAll(req.user.id, {
+    return await this.ecfService.findAll(req.user.empresaId, {
       estado,
       rncComprador,
     });
@@ -62,7 +62,7 @@ export class EcfController {
     @Query('hasta') hasta?: string,
     @Query('estado') estado?: string,
   ) {
-    return await this.ecfService.getResumen(req.user.id, { desde, hasta, estado });
+    return await this.ecfService.getResumen(req.user.empresaId, { desde, hasta, estado });
   }
 
   @Get('reportes/export')
@@ -77,7 +77,7 @@ export class EcfController {
     @Query('hasta') hasta?: string,
     @Query('estado') estado?: string,
   ) {
-    const csv = await this.ecfService.exportCsv(req.user.id, { desde, hasta, estado });
+    const csv = await this.ecfService.exportCsv(req.user.empresaId, { desde, hasta, estado });
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', 'attachment; filename="comprobantes.csv"');
     res.send(csv);
@@ -86,7 +86,7 @@ export class EcfController {
   @Get(':id')
   @ApiOperation({ summary: 'Obtener comprobante por ID' })
   async findOne(@Param('id') id: string, @Request() req: any) {
-    return await this.ecfService.findOne(id, req.user.id);
+    return await this.ecfService.findOne(id, req.user.empresaId);
   }
 
   @Put(':id')
@@ -96,37 +96,37 @@ export class EcfController {
     @Body() dto: UpdateEcfDto,
     @Request() req: any,
   ) {
-    return await this.ecfService.update(id, dto, req.user.id);
+    return await this.ecfService.update(id, dto, req.user.empresaId);
   }
 
   @Delete(':id')
   @ApiOperation({ summary: 'Eliminar comprobante' })
   async remove(@Param('id') id: string, @Request() req: any) {
-    return await this.ecfService.remove(id, req.user.id);
+    return await this.ecfService.remove(id, req.user.empresaId);
   }
 
   @Post(':id/validate')
   @ApiOperation({ summary: 'Validar comprobante con XSD' })
   async validate(@Param('id') id: string, @Request() req: any) {
-    return await this.ecfService.validateEcf(id, req.user.id);
+    return await this.ecfService.validateEcf(id, req.user.empresaId);
   }
 
   @Post(':id/sign')
   @ApiOperation({ summary: 'Firmar comprobante' })
   async sign(@Param('id') id: string, @Request() req: any) {
-    return await this.ecfService.signEcf(id, req.user.id);
+    return await this.ecfService.signEcf(id, req.user.empresaId);
   }
 
   @Post(':id/transmit')
   @ApiOperation({ summary: 'Transmitir comprobante firmado a la DGII' })
   async transmit(@Param('id') id: string, @Request() req: any) {
-    return await this.ecfService.transmitEcf(id, req.user.id);
+    return await this.ecfService.transmitEcf(id, req.user.empresaId, req.user.id);
   }
 
   @Get(':id/status')
   @ApiOperation({ summary: 'Consultar estado del comprobante en la DGII' })
   async status(@Param('id') id: string, @Request() req: any) {
-    return await this.ecfService.checkStatus(id, req.user.id);
+    return await this.ecfService.checkStatus(id, req.user.empresaId, req.user.id);
   }
 
   @Post(':id/cancel')
@@ -136,6 +136,11 @@ export class EcfController {
     @Body() body: { motivo: string },
     @Request() req: any,
   ) {
-    return await this.ecfService.cancelEcf(id, req.user.id, body.motivo);
+    return await this.ecfService.cancelEcf(
+      id,
+      req.user.empresaId,
+      req.user.id,
+      body.motivo,
+    );
   }
 }
