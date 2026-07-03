@@ -9,6 +9,7 @@ export default function Navbar() {
 
   function handleLogout() {
     localStorage.removeItem('ecf_token');
+    localStorage.removeItem('ecf_user');
     router.push('/login');
   }
 
@@ -17,6 +18,7 @@ export default function Navbar() {
     { href: '/ecf/nueva', label: 'Nuevo e-CF' },
     { href: '/reportes', label: 'Reportes' },
     { href: '/dgii', label: 'DGII' },
+    { href: '/opciones', label: 'Opciones' },
   ];
 
   return (

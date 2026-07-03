@@ -5,7 +5,7 @@ import { Ecf } from '../entities/ecf.entity';
  * Mapeo de código interno → número DGII de TipoeCF.
  * El XSD TipoeCFType acepta enteros: 31, 32, 33, 34, 41, 43, 44, 45, 46, 47.
  */
-const TIPO_ECF_MAP: Record<string, number> = {
+export const TIPO_ECF_MAP: Record<string, number> = {
   'e-CF_31_v_1_0': 31,
   'e-CF_32_v_1_0': 32,
   'e-CF_33_v_1_0': 33,

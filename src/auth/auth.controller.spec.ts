@@ -38,6 +38,7 @@ describe('AuthController', () => {
         password: 'password123',
         numeroRegistro: '12345678901',
         tipoPersona: 'juridica',
+        razonSocial: 'Test Empresa S.A.',
       };
 
       const expectedResult = {
@@ -47,6 +48,13 @@ describe('AuthController', () => {
           email: 'test@example.com',
           nombre: 'Test User',
           numeroRegistro: '12345678901',
+          rol: 'admin',
+          empresaId: 'empresa-1',
+        },
+        empresa: {
+          id: 'empresa-1',
+          rnc: '12345678901',
+          razonSocial: 'Test Empresa S.A.',
         },
       };
 
@@ -73,6 +81,13 @@ describe('AuthController', () => {
           email: 'test@example.com',
           nombre: 'Test User',
           numeroRegistro: '12345678901',
+          rol: 'admin',
+          empresaId: 'empresa-1',
+        },
+        empresa: {
+          id: 'empresa-1',
+          rnc: '12345678901',
+          razonSocial: 'Test Empresa S.A.',
         },
       };
 

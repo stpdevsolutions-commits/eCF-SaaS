@@ -66,13 +66,65 @@ export interface CreateEcfDto {
   lineas: CreateLineaEcfDto[];
 }
 
+export type UserRol = 'admin' | 'member';
+
+export interface SessionUser {
+  id: string;
+  email: string;
+  nombre?: string;
+  numeroRegistro?: string;
+  rol?: string;
+  empresaId?: string | null;
+}
+
 export interface LoginResponse {
   access_token: string;
-  user?: {
+  user?: SessionUser;
+  empresa?: {
     id: string;
-    email: string;
-    nombre?: string;
-  };
+    rnc: string;
+    razonSocial: string;
+  } | null;
+}
+
+export interface Empresa {
+  id: string;
+  rnc: string;
+  razonSocial: string;
+  nombreComercial?: string | null;
+  direccion?: string | null;
+  telefono?: string | null;
+  tipoContribuyente: string;
+  activo: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface UsuarioEmpresa {
+  id: string;
+  nombre: string;
+  email: string;
+  rol: string;
+  activo: boolean;
+  createdAt: string;
+}
+
+export interface EmpresaResponse {
+  empresa: Empresa;
+  usuarios: UsuarioEmpresa[];
+}
+
+export interface UpdateEmpresaDto {
+  razonSocial?: string;
+  nombreComercial?: string;
+  direccion?: string;
+  telefono?: string;
+}
+
+export interface SecuenciaEncf {
+  tipoEcf: string;
+  ultimaSecuencia: number;
+  proximoEncf: string;
 }
 
 export interface ApiError {

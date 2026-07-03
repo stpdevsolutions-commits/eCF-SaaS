@@ -1,3 +1,4 @@
+import { join } from 'path';
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule, ConfigService } from '@nestjs/config';
@@ -7,6 +8,7 @@ import * as Joi from 'joi';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
+import { EmpresaModule } from './empresa/empresa.module';
 import { EcfModule } from './ecf/ecf.module';
 import { ValidationModule } from './validation/validation.module';
 import { DgiiModule } from './dgii/dgii.module';
@@ -66,11 +68,15 @@ import { LineaEcf } from './ecf/entities/linea-ecf.entity';
         autoLoadEntities: true,
         synchronize: configService.get('NODE_ENV') === 'development',
         logging: configService.get('NODE_ENV') === 'development',
-        migrations: ['src/database/migrations/*.ts'],
-        migrationsRun: false,
+        // Path relativo a __dirname para que funcione tanto en dev (ts) como compilado (dist/js)
+        migrations: [join(__dirname, 'database', 'migrations', '*{.ts,.js}')],
+        // En producción las migraciones se ejecutan automáticamente al arrancar;
+        // en development el esquema lo maneja synchronize.
+        migrationsRun: configService.get('NODE_ENV') === 'production',
       }),
     }),
     AuthModule,
+    EmpresaModule,
     EcfModule,
     ValidationModule,
     DgiiModule,

@@ -1,10 +1,38 @@
-import { CreateEcfDto, Ecf, LoginResponse, ResumenReporte } from './types';
+import {
+  CreateEcfDto,
+  Ecf,
+  Empresa,
+  EmpresaResponse,
+  LoginResponse,
+  ResumenReporte,
+  SecuenciaEncf,
+  SessionUser,
+  UpdateEmpresaDto,
+  UsuarioEmpresa,
+} from './types';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3000';
 
 function getToken(): string | null {
   if (typeof window === 'undefined') return null;
   return localStorage.getItem('ecf_token');
+}
+
+/** Sesión guardada en el login (incluye `rol` para condicionar la UI). */
+export function getStoredUser(): SessionUser | null {
+  if (typeof window === 'undefined') return null;
+  const raw = localStorage.getItem('ecf_user');
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as SessionUser;
+  } catch {
+    return null;
+  }
+}
+
+export function saveStoredUser(user: SessionUser): void {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem('ecf_user', JSON.stringify(user));
 }
 
 function authHeaders(): HeadersInit {
@@ -19,6 +47,7 @@ async function handleResponse<T>(res: Response): Promise<T> {
   if (res.status === 401) {
     if (typeof window !== 'undefined') {
       localStorage.removeItem('ecf_token');
+      localStorage.removeItem('ecf_user');
       window.location.href = '/login';
     }
     throw new Error('No autorizado');
@@ -47,8 +76,100 @@ export async function login(email: string, password: string): Promise<LoginRespo
   return handleResponse<LoginResponse>(res);
 }
 
-export async function getMe(): Promise<{ id: string; email: string; nombre?: string }> {
+export async function getMe(): Promise<{
+  id: string;
+  email: string;
+  nombre?: string;
+  rol?: string;
+  empresaId?: string | null;
+}> {
   const res = await fetch(`${API_URL}/api/auth/me`, {
+    headers: authHeaders(),
+  });
+  return handleResponse(res);
+}
+
+export async function changePassword(
+  passwordActual: string,
+  passwordNueva: string,
+): Promise<{ message: string }> {
+  const res = await fetch(`${API_URL}/api/auth/password`, {
+    method: 'PATCH',
+    headers: authHeaders(),
+    body: JSON.stringify({ passwordActual, passwordNueva }),
+  });
+  return handleResponse(res);
+}
+
+export async function updatePerfil(
+  nombre: string,
+): Promise<{ message: string; user: SessionUser }> {
+  const res = await fetch(`${API_URL}/api/auth/perfil`, {
+    method: 'PATCH',
+    headers: authHeaders(),
+    body: JSON.stringify({ nombre }),
+  });
+  return handleResponse(res);
+}
+
+// ── Empresa ──────────────────────────────────────────────────────────────────
+
+export async function getEmpresa(): Promise<EmpresaResponse> {
+  const res = await fetch(`${API_URL}/api/empresa`, {
+    headers: authHeaders(),
+  });
+  return handleResponse<EmpresaResponse>(res);
+}
+
+export async function updateEmpresa(dto: UpdateEmpresaDto): Promise<Empresa> {
+  const res = await fetch(`${API_URL}/api/empresa`, {
+    method: 'PATCH',
+    headers: authHeaders(),
+    body: JSON.stringify(dto),
+  });
+  return handleResponse<Empresa>(res);
+}
+
+export async function getSecuencias(): Promise<SecuenciaEncf[]> {
+  const res = await fetch(`${API_URL}/api/empresa/secuencias`, {
+    headers: authHeaders(),
+  });
+  return handleResponse<SecuenciaEncf[]>(res);
+}
+
+export async function setSecuencia(
+  tipoEcf: string,
+  ultimaSecuencia: number,
+): Promise<SecuenciaEncf> {
+  const res = await fetch(
+    `${API_URL}/api/empresa/secuencias/${encodeURIComponent(tipoEcf)}`,
+    {
+      method: 'PUT',
+      headers: authHeaders(),
+      body: JSON.stringify({ ultimaSecuencia }),
+    },
+  );
+  return handleResponse<SecuenciaEncf>(res);
+}
+
+export async function createUsuarioEmpresa(dto: {
+  nombre: string;
+  email: string;
+  password: string;
+}): Promise<UsuarioEmpresa> {
+  const res = await fetch(`${API_URL}/api/empresa/usuarios`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(dto),
+  });
+  return handleResponse<UsuarioEmpresa>(res);
+}
+
+export async function deactivateUsuarioEmpresa(
+  id: string,
+): Promise<{ message: string; usuario: UsuarioEmpresa }> {
+  const res = await fetch(`${API_URL}/api/empresa/usuarios/${id}`, {
+    method: 'DELETE',
     headers: authHeaders(),
   });
   return handleResponse(res);

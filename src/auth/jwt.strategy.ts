@@ -18,8 +18,19 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
   }
 
+  /**
+   * El payload del token incluye empresaId y rol, pero la fuente de verdad
+   * es la BD: validateUser carga el usuario fresco, así los tokens viejos
+   * (sin empresaId) siguen funcionando después del backfill sin re-login.
+   * Usuarios desactivados (activo=false) devuelven null → 401.
+   */
   async validate(payload: any) {
     const user = await this.authService.validateUser(payload.sub);
-    return user;
+    if (!user) {
+      return null;
+    }
+    // No exponer el hash de la contraseña en req.user
+    const { password: _password, ...safeUser } = user as any;
+    return safeUser;
   }
 }
