@@ -9,6 +9,15 @@ import {
   createEcf,
   cancelEcf,
   getResumenReporte,
+  changePassword,
+  updatePerfil,
+  getEmpresa,
+  updateEmpresa,
+  getSecuencias,
+  setSecuencia,
+  createUsuarioEmpresa,
+  deactivateUsuarioEmpresa,
+  getStoredUser,
 } from '@/lib/api';
 
 const API_URL = 'http://localhost:3000';
@@ -144,6 +153,160 @@ describe('cancelEcf', () => {
     expect(options.method).toBe('POST');
     expect(JSON.parse(options.body)).toEqual({ motivo: 'Error en el monto' });
     expect(result.estado).toBe('cancelled');
+  });
+});
+
+describe('changePassword', () => {
+  it('hace PATCH a /api/auth/password con ambas contraseñas', async () => {
+    localStorage.setItem('ecf_token', 't');
+    mockFetchOnce({ message: 'Contraseña actualizada exitosamente' });
+
+    const result = await changePassword('Actual123!', 'Nueva1234!');
+
+    const [url, options] = (global.fetch as jest.Mock).mock.calls[0];
+    expect(url).toBe(`${API_URL}/api/auth/password`);
+    expect(options.method).toBe('PATCH');
+    expect(JSON.parse(options.body)).toEqual({
+      passwordActual: 'Actual123!',
+      passwordNueva: 'Nueva1234!',
+    });
+    expect(result.message).toBe('Contraseña actualizada exitosamente');
+  });
+
+  it('propaga el error del backend (contraseña actual incorrecta)', async () => {
+    localStorage.setItem('ecf_token', 't');
+    mockFetchOnce({ message: 'La contraseña actual no es correcta' }, 400);
+
+    await expect(changePassword('mala', 'Nueva1234!')).rejects.toThrow(
+      'La contraseña actual no es correcta',
+    );
+  });
+});
+
+describe('updatePerfil', () => {
+  it('hace PATCH a /api/auth/perfil con el nombre', async () => {
+    localStorage.setItem('ecf_token', 't');
+    mockFetchOnce({ message: 'ok', user: { id: 'u1', nombre: 'Nuevo' } });
+
+    await updatePerfil('Nuevo');
+
+    const [url, options] = (global.fetch as jest.Mock).mock.calls[0];
+    expect(url).toBe(`${API_URL}/api/auth/perfil`);
+    expect(options.method).toBe('PATCH');
+    expect(JSON.parse(options.body)).toEqual({ nombre: 'Nuevo' });
+  });
+});
+
+describe('empresa', () => {
+  it('getEmpresa hace GET a /api/empresa con auth', async () => {
+    localStorage.setItem('ecf_token', 't');
+    mockFetchOnce({ empresa: { id: 'e1' }, usuarios: [] });
+
+    const result = await getEmpresa();
+
+    const [url, options] = (global.fetch as jest.Mock).mock.calls[0];
+    expect(url).toBe(`${API_URL}/api/empresa`);
+    expect(options.headers.Authorization).toBe('Bearer t');
+    expect(result.empresa.id).toBe('e1');
+  });
+
+  it('updateEmpresa hace PATCH a /api/empresa con el dto parcial', async () => {
+    localStorage.setItem('ecf_token', 't');
+    mockFetchOnce({ id: 'e1', telefono: '809-555-9999' });
+
+    await updateEmpresa({ telefono: '809-555-9999' });
+
+    const [url, options] = (global.fetch as jest.Mock).mock.calls[0];
+    expect(url).toBe(`${API_URL}/api/empresa`);
+    expect(options.method).toBe('PATCH');
+    expect(JSON.parse(options.body)).toEqual({ telefono: '809-555-9999' });
+  });
+
+  it('createUsuarioEmpresa hace POST a /api/empresa/usuarios', async () => {
+    localStorage.setItem('ecf_token', 't');
+    mockFetchOnce({ id: 'u2', rol: 'member' }, 201);
+
+    await createUsuarioEmpresa({
+      nombre: 'María',
+      email: 'maria@e.com',
+      password: 'Password123!',
+    });
+
+    const [url, options] = (global.fetch as jest.Mock).mock.calls[0];
+    expect(url).toBe(`${API_URL}/api/empresa/usuarios`);
+    expect(options.method).toBe('POST');
+  });
+
+  it('deactivateUsuarioEmpresa hace DELETE a /api/empresa/usuarios/:id', async () => {
+    localStorage.setItem('ecf_token', 't');
+    mockFetchOnce({ message: 'Usuario desactivado exitosamente' });
+
+    await deactivateUsuarioEmpresa('u2');
+
+    const [url, options] = (global.fetch as jest.Mock).mock.calls[0];
+    expect(url).toBe(`${API_URL}/api/empresa/usuarios/u2`);
+    expect(options.method).toBe('DELETE');
+  });
+});
+
+describe('secuencias eNCF', () => {
+  it('getSecuencias hace GET a /api/empresa/secuencias', async () => {
+    localStorage.setItem('ecf_token', 't');
+    mockFetchOnce([
+      { tipoEcf: 'e-CF_31_v_1_0', ultimaSecuencia: 0, proximoEncf: 'E310000000001' },
+    ]);
+
+    const result = await getSecuencias();
+
+    const [url] = (global.fetch as jest.Mock).mock.calls[0];
+    expect(url).toBe(`${API_URL}/api/empresa/secuencias`);
+    expect(result[0].proximoEncf).toBe('E310000000001');
+  });
+
+  it('setSecuencia hace PUT a /api/empresa/secuencias/:tipoEcf con el valor', async () => {
+    localStorage.setItem('ecf_token', 't');
+    mockFetchOnce({
+      tipoEcf: 'e-CF_31_v_1_0',
+      ultimaSecuencia: 100,
+      proximoEncf: 'E310000000101',
+    });
+
+    await setSecuencia('e-CF_31_v_1_0', 100);
+
+    const [url, options] = (global.fetch as jest.Mock).mock.calls[0];
+    expect(url).toBe(`${API_URL}/api/empresa/secuencias/e-CF_31_v_1_0`);
+    expect(options.method).toBe('PUT');
+    expect(JSON.parse(options.body)).toEqual({ ultimaSecuencia: 100 });
+  });
+
+  it('setSecuencia propaga el 400 al intentar bajar la secuencia', async () => {
+    localStorage.setItem('ecf_token', 't');
+    mockFetchOnce(
+      { message: 'La secuencia no puede reducirse: se re-emitirían eNCF ya utilizados' },
+      400,
+    );
+
+    await expect(setSecuencia('e-CF_31_v_1_0', 1)).rejects.toThrow(
+      /no puede reducirse/,
+    );
+  });
+});
+
+describe('getStoredUser', () => {
+  it('devuelve el usuario guardado en localStorage', () => {
+    localStorage.setItem(
+      'ecf_user',
+      JSON.stringify({ id: 'u1', email: 'a@b.com', rol: 'admin' }),
+    );
+
+    expect(getStoredUser()).toEqual({ id: 'u1', email: 'a@b.com', rol: 'admin' });
+  });
+
+  it('devuelve null si no hay usuario o el JSON es inválido', () => {
+    expect(getStoredUser()).toBeNull();
+
+    localStorage.setItem('ecf_user', '{corrupto');
+    expect(getStoredUser()).toBeNull();
   });
 });
 

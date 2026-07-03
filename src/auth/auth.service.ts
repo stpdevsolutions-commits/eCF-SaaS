@@ -2,6 +2,7 @@ import {
   Injectable,
   ConflictException,
   UnauthorizedException,
+  NotFoundException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository, InjectDataSource } from '@nestjs/typeorm';
@@ -127,6 +128,56 @@ export class AuthService {
             razonSocial: empresa.razonSocial,
           }
         : null,
+    };
+  }
+
+  /**
+   * Cambia la contraseña del propio usuario. Requiere la contraseña actual
+   * (verificada con bcrypt) para evitar cambios con un token robado.
+   */
+  async changePassword(
+    userId: string,
+    passwordActual: string,
+    passwordNueva: string,
+  ) {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+
+    if (!user) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
+
+    const isPasswordValid = await bcrypt.compare(passwordActual, user.password);
+
+    if (!isPasswordValid) {
+      throw new UnauthorizedException('La contraseña actual no es correcta');
+    }
+
+    user.password = await bcrypt.hash(passwordNueva, 10);
+    await this.userRepository.save(user);
+
+    return { message: 'Contraseña actualizada exitosamente' };
+  }
+
+  /** Actualiza el nombre del propio usuario. */
+  async updatePerfil(userId: string, nombre: string) {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+
+    if (!user) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
+
+    user.nombre = nombre;
+    const saved = await this.userRepository.save(user);
+
+    return {
+      message: 'Perfil actualizado exitosamente',
+      user: {
+        id: saved.id,
+        email: saved.email,
+        nombre: saved.nombre,
+        rol: saved.rol,
+        empresaId: saved.empresaId ?? null,
+      },
     };
   }
 

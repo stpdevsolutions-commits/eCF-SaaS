@@ -26,6 +26,10 @@ export default function LoginPage() {
     try {
       const data = await login(email, password);
       localStorage.setItem('ecf_token', data.access_token);
+      if (data.user) {
+        // Persistir el usuario (incluye `rol`) para condicionar la UI
+        localStorage.setItem('ecf_user', JSON.stringify(data.user));
+      }
       router.push('/dashboard');
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Error al iniciar sesión';

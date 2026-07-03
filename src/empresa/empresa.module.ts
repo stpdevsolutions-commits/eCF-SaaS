@@ -4,9 +4,10 @@ import { EmpresaController } from './empresa.controller';
 import { EmpresaService } from './empresa.service';
 import { Empresa } from './entities/empresa.entity';
 import { User } from '../auth/entities/user.entity';
+import { EcfModule } from '../ecf/ecf.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Empresa, User])],
+  imports: [TypeOrmModule.forFeature([Empresa, User]), EcfModule],
   controllers: [EmpresaController],
   providers: [EmpresaService],
   exports: [EmpresaService],

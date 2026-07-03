@@ -10,6 +10,7 @@ import * as bcrypt from 'bcryptjs';
 import { Empresa } from './entities/empresa.entity';
 import { User } from '../auth/entities/user.entity';
 import { CreateEmpresaUserDto } from './dto/create-empresa-user.dto';
+import { UpdateEmpresaDto } from './dto/update-empresa.dto';
 
 @Injectable()
 export class EmpresaService {
@@ -50,6 +51,28 @@ export class EmpresaService {
       empresa,
       usuarios: usuarios.map((u) => this.toSafeUser(u)),
     };
+  }
+
+  /**
+   * Actualiza los datos editables de la empresa. El RNC no es editable
+   * (identidad fiscal); solo se aceptan los campos del DTO.
+   */
+  async updateEmpresa(empresaId: string, dto: UpdateEmpresaDto) {
+    const empresa = await this.empresaRepository.findOne({
+      where: { id: empresaId },
+    });
+
+    if (!empresa) {
+      throw new NotFoundException('Empresa no encontrada');
+    }
+
+    if (dto.razonSocial !== undefined) empresa.razonSocial = dto.razonSocial;
+    if (dto.nombreComercial !== undefined)
+      empresa.nombreComercial = dto.nombreComercial;
+    if (dto.direccion !== undefined) empresa.direccion = dto.direccion;
+    if (dto.telefono !== undefined) empresa.telefono = dto.telefono;
+
+    return await this.empresaRepository.save(empresa);
   }
 
   /** Crea un usuario 'member' dentro de la empresa. */
