@@ -53,6 +53,7 @@ export class DgiiService {
       const data = (await response.json()) as DgiiAuthResponse;
       return data;
     } catch (error) {
+      if (error instanceof HttpException) throw error;
       throw new HttpException(
         'Error conectando con DGII',
         HttpStatus.SERVICE_UNAVAILABLE,
@@ -92,6 +93,7 @@ export class DgiiService {
 
       return (await response.json()) as DgiiTransmitResponse;
     } catch (error) {
+      if (error instanceof HttpException) throw error;
       throw new HttpException(
         'Error en transmisión a DGII',
         HttpStatus.INTERNAL_SERVER_ERROR,
@@ -129,6 +131,7 @@ export class DgiiService {
 
       return await response.json();
     } catch (error) {
+      if (error instanceof HttpException) throw error;
       throw new HttpException(
         'Error consultando DGII',
         HttpStatus.INTERNAL_SERVER_ERROR,
@@ -169,6 +172,7 @@ export class DgiiService {
 
       return await response.json();
     } catch (error) {
+      if (error instanceof HttpException) throw error;
       throw new HttpException(
         'Error en cancelación DGII',
         HttpStatus.INTERNAL_SERVER_ERROR,
