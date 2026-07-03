@@ -8,6 +8,7 @@ import { User } from '../../auth/entities/user.entity';
 import { XsdValidatorService } from '../../validation/xsd-validator.service';
 import { EcfXmlService } from './ecf-xml.service';
 import { EcfSigningService } from './ecf-signing.service';
+import { NcfSequenceService } from './ncf-sequence.service';
 import { DgiiService } from '../../dgii/dgii.service';
 
 function mockQueryBuilder(comprobantes: any[]) {
@@ -28,6 +29,7 @@ describe('EcfService', () => {
   let mockValidatorService: any;
   let mockXmlService: any;
   let mockSigningService: any;
+  let mockNcfSequenceService: any;
   let mockDgiiService: any;
 
   beforeEach(async () => {
@@ -75,10 +77,18 @@ describe('EcfService', () => {
 
     mockXmlService = {
       generateXml: jest.fn().mockReturnValue('<ECF></ECF>'),
+      buildEncf: jest.fn(
+        (tipoEcf: string, seq: number) =>
+          `E${tipoEcf.slice(5, 7)}${String(seq).padStart(10, '0')}`,
+      ),
     };
 
     mockSigningService = {
       signXml: jest.fn().mockReturnValue('<ECF><ds:Signature/></ECF>'),
+    };
+
+    mockNcfSequenceService = {
+      nextSequence: jest.fn().mockResolvedValue(1),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -107,6 +117,10 @@ describe('EcfService', () => {
         {
           provide: EcfSigningService,
           useValue: mockSigningService,
+        },
+        {
+          provide: NcfSequenceService,
+          useValue: mockNcfSequenceService,
         },
         {
           provide: DgiiService,
@@ -174,6 +188,113 @@ describe('EcfService', () => {
       const result = await service.validateEcf('1', 'user-id');
 
       expect(result.valid).toBe(true);
+    });
+  });
+
+  describe('asignación de secuencia eNCF', () => {
+    const baseEcf = (extra: Record<string, any> = {}): any => ({
+      id: '1',
+      tipoEcf: 'e-CF_31_v_1_0',
+      estado: 'draft',
+      encf: null,
+      xmlValidacion: null,
+      usuario: { id: 'user-id' },
+      ...extra,
+    });
+
+    beforeEach(() => {
+      mockEcfRepository.save.mockImplementation((data: any) => Promise.resolve(data));
+    });
+
+    it('asigna una secuencia nueva al validar y persiste el eNCF', async () => {
+      const ecf = baseEcf();
+      mockEcfRepository.findOne.mockResolvedValue(ecf);
+      mockNcfSequenceService.nextSequence.mockResolvedValue(7);
+
+      const result = await service.validateEcf('1', 'user-id');
+
+      expect(mockNcfSequenceService.nextSequence).toHaveBeenCalledTimes(1);
+      expect(mockNcfSequenceService.nextSequence).toHaveBeenCalledWith(
+        'user-id',
+        'e-CF_31_v_1_0',
+      );
+      expect(mockXmlService.buildEncf).toHaveBeenCalledWith('e-CF_31_v_1_0', 7);
+      expect(ecf.encf).toBe('E310000000007');
+      expect(mockEcfRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({ encf: 'E310000000007' }),
+      );
+      expect(result.encf).toBe('E310000000007');
+    });
+
+    it('no consume una secuencia nueva al revalidar si el eNCF ya está asignado', async () => {
+      const ecf = baseEcf({ estado: 'validated', encf: 'E310000000007' });
+      mockEcfRepository.findOne.mockResolvedValue(ecf);
+
+      const result = await service.validateEcf('1', 'user-id');
+
+      expect(mockNcfSequenceService.nextSequence).not.toHaveBeenCalled();
+      expect(ecf.encf).toBe('E310000000007');
+      expect(result.encf).toBe('E310000000007');
+    });
+
+    it('al firmar reutiliza el eNCF ya asignado cuando regenera el XML (xmlValidacion null)', async () => {
+      const ecf = baseEcf({ estado: 'validated', encf: 'E310000000007' });
+      mockEcfRepository.findOne.mockResolvedValue(ecf);
+
+      const result = await service.signEcf('1', 'user-id');
+
+      // No debe consumir una secuencia nueva ni cambiar el eNCF asignado
+      expect(mockNcfSequenceService.nextSequence).not.toHaveBeenCalled();
+      expect(mockXmlService.generateXml).toHaveBeenCalledWith(ecf);
+      expect(ecf.encf).toBe('E310000000007');
+      expect(result.encf).toBe('E310000000007');
+      expect(result.estado).toBe('signed');
+    });
+
+    it('al firmar no regenera XML ni consume secuencia si xmlValidacion ya existe', async () => {
+      const ecf = baseEcf({
+        estado: 'validated',
+        encf: 'E310000000007',
+        xmlValidacion: '<ECF>validado</ECF>',
+      });
+      mockEcfRepository.findOne.mockResolvedValue(ecf);
+
+      await service.signEcf('1', 'user-id');
+
+      expect(mockNcfSequenceService.nextSequence).not.toHaveBeenCalled();
+      expect(mockXmlService.generateXml).not.toHaveBeenCalled();
+      expect(mockSigningService.signXml).toHaveBeenCalledWith('<ECF>validado</ECF>');
+    });
+
+    it('al firmar sin validación previa (sin encf ni xmlValidacion) asigna la secuencia una vez', async () => {
+      const ecf = baseEcf();
+      mockEcfRepository.findOne.mockResolvedValue(ecf);
+      mockNcfSequenceService.nextSequence.mockResolvedValue(3);
+
+      const result = await service.signEcf('1', 'user-id');
+
+      expect(mockNcfSequenceService.nextSequence).toHaveBeenCalledTimes(1);
+      expect(ecf.encf).toBe('E310000000003');
+      expect(result.encf).toBe('E310000000003');
+    });
+
+    it('dos comprobantes del mismo tipo obtienen eNCF distintos', async () => {
+      const ecf1 = baseEcf({ id: '1' });
+      const ecf2 = baseEcf({ id: '2' });
+      mockEcfRepository.findOne
+        .mockResolvedValueOnce(ecf1)
+        .mockResolvedValueOnce(ecf2);
+      mockNcfSequenceService.nextSequence
+        .mockResolvedValueOnce(1)
+        .mockResolvedValueOnce(2);
+
+      await service.validateEcf('1', 'user-id');
+      await service.validateEcf('2', 'user-id');
+
+      expect(mockNcfSequenceService.nextSequence).toHaveBeenCalledTimes(2);
+      expect(ecf1.encf).toBe('E310000000001');
+      expect(ecf2.encf).toBe('E310000000002');
+      expect(ecf1.encf).not.toBe(ecf2.encf);
     });
   });
 

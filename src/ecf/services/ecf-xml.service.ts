@@ -26,7 +26,9 @@ export class EcfXmlService {
    * Genera el XML del comprobante (sin firma) conforme al XSD correspondiente.
    *
    * @param ecf       Entidad ECF con sus líneas cargadas (ecf.lineas debe estar populated)
-   * @param secuencia Número de secuencia para el eNCF (13 chars: E + tipo(2) + seq(10))
+   * @param secuencia Número de secuencia para el eNCF (13 chars: E + tipo(2) + seq(10)).
+   *                  Solo se usa como fallback si el ECF aún no tiene `encf` asignado;
+   *                  si `ecf.encf` existe, SIEMPRE se reutiliza ese valor.
    */
   generateXml(ecf: Ecf, secuencia = 1): string {
     const tipoNumerico = TIPO_ECF_MAP[ecf.tipoEcf];
@@ -34,7 +36,7 @@ export class EcfXmlService {
       throw new Error(`Tipo ECF no soportado: "${ecf.tipoEcf}". Valores válidos: ${Object.keys(TIPO_ECF_MAP).join(', ')}`);
     }
 
-    const eNCF = this.buildENCF(tipoNumerico, secuencia);
+    const eNCF = ecf.encf ?? this.buildENCF(tipoNumerico, secuencia);
     const now = new Date();
     const fechaEmision = this.toFecha(ecf.fechaEmision ?? now);
     const vencimientoSecuencia = this.toFecha(this.addYears(now, 1));
@@ -143,6 +145,18 @@ export class EcfXmlService {
     return `${SCHEMA_BASEPATH}/${tipoEcf}.xsd`;
   }
 
+  /**
+   * Construye el eNCF a partir del código interno de tipo (e-CF_31_v_1_0 → E31…)
+   * y una secuencia. Usado por EcfService al asignar la secuencia persistida.
+   */
+  buildEncf(tipoEcf: string, secuencia: number): string {
+    const tipoNumerico = TIPO_ECF_MAP[tipoEcf];
+    if (!tipoNumerico) {
+      throw new Error(`Tipo ECF no soportado: "${tipoEcf}". Valores válidos: ${Object.keys(TIPO_ECF_MAP).join(', ')}`);
+    }
+    return this.buildENCF(tipoNumerico, secuencia);
+  }
+
   // ── Helpers privados ────────────────────────────────────────────────────────
 
   /**
@@ -150,6 +164,9 @@ export class EcfXmlService {
    * Ejemplo: E310000000001
    */
   private buildENCF(tipo: number, seq: number): string {
+    if (!Number.isInteger(seq) || seq < 1 || seq > 9_999_999_999) {
+      throw new Error(`Secuencia eNCF inválida: ${seq} (debe ser un entero entre 1 y 9999999999)`);
+    }
     return `E${tipo}${String(seq).padStart(10, '0')}`;
   }
 

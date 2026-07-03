@@ -14,6 +14,7 @@ import { UpdateEcfDto } from '../dto/update-ecf.dto';
 import { XsdValidatorService } from '../../validation/xsd-validator.service';
 import { EcfXmlService } from './ecf-xml.service';
 import { EcfSigningService } from './ecf-signing.service';
+import { NcfSequenceService } from './ncf-sequence.service';
 import { DgiiService } from '../../dgii/dgii.service';
 
 @Injectable()
@@ -28,6 +29,7 @@ export class EcfService {
     private validatorService: XsdValidatorService,
     private xmlService: EcfXmlService,
     private signingService: EcfSigningService,
+    private ncfSequenceService: NcfSequenceService,
     private dgiiService: DgiiService,
   ) {}
 
@@ -150,6 +152,24 @@ export class EcfService {
     return { message: 'Comprobante eliminado exitosamente' };
   }
 
+  // ── Secuencia eNCF ──────────────────────────────────────────────────────────
+
+  /**
+   * Garantiza que el ECF tenga un eNCF asignado. La secuencia se consume UNA
+   * sola vez: si el ECF ya tiene `encf` (asignado en una validación previa),
+   * se reutiliza y NO se incrementa el contador.
+   */
+  private async asignarEncf(ecf: Ecf, usuarioId: string): Promise<void> {
+    if (ecf.encf) {
+      return;
+    }
+    const secuencia = await this.ncfSequenceService.nextSequence(
+      usuarioId,
+      ecf.tipoEcf,
+    );
+    ecf.encf = this.xmlService.buildEncf(ecf.tipoEcf, secuencia);
+  }
+
   // ── Validación ──────────────────────────────────────────────────────────────
 
   async validateEcf(id: string, usuarioId: string) {
@@ -161,6 +181,7 @@ export class EcfService {
       );
     }
 
+    await this.asignarEncf(ecf, usuarioId);
     const xml = this.xmlService.generateXml(ecf);
     const result = this.validatorService.validateXmlStructure(xml, ecf.tipoEcf);
 
@@ -168,7 +189,7 @@ export class EcfService {
     ecf.estado = result.valid ? 'validated' : 'draft';
     await this.ecfRepository.save(ecf);
 
-    return { ...result, estado: ecf.estado, xmlGenerado: xml };
+    return { ...result, estado: ecf.estado, encf: ecf.encf, xmlGenerado: xml };
   }
 
   // ── Reportes ────────────────────────────────────────────────────────────────
@@ -275,8 +296,14 @@ export class EcfService {
       );
     }
 
-    // Reutilizar XML validado o generar uno nuevo
-    const xmlSinFirmar = ecf.xmlValidacion ?? this.xmlService.generateXml(ecf);
+    // Reutilizar XML validado o generar uno nuevo.
+    // Si hay que regenerar, se reutiliza el eNCF ya asignado (asignarEncf solo
+    // consume una secuencia nueva cuando el ECF nunca ha tenido una).
+    let xmlSinFirmar = ecf.xmlValidacion;
+    if (!xmlSinFirmar) {
+      await this.asignarEncf(ecf, usuarioId);
+      xmlSinFirmar = this.xmlService.generateXml(ecf);
+    }
 
     // Validar estructura antes de firmar
     const validation = this.validatorService.validateXmlStructure(xmlSinFirmar, ecf.tipoEcf);
@@ -296,6 +323,7 @@ export class EcfService {
     return {
       id: ecf.id,
       estado: ecf.estado,
+      encf: ecf.encf,
       xmlFirmado,
       mensaje: 'Comprobante firmado exitosamente con XMLDSig (RSA-2048 / SHA-256)',
       advertencias: validation.warnings,
