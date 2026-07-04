@@ -662,7 +662,14 @@ describe('EcfService', () => {
     });
 
     it('cancela y actualiza el estado cuando todo es válido', async () => {
-      const mockEcf = { id: '1', estado: 'transmitted', uuid: 'uuid-abc' };
+      const mockEcf = {
+        id: '1',
+        estado: 'transmitted',
+        uuid: 'uuid-abc',
+        rncEmisor: '132943058',
+        tipoEcf: 'e-CF_31_v_1_0',
+        encf: 'E310000000007',
+      };
       mockEcfRepository.findOne.mockResolvedValue(mockEcf);
       mockUserRepository.findOne.mockResolvedValue({ id: 'user-id', tokenDgii: 'tok-123' });
       mockDgiiService.cancelEcf.mockResolvedValue({
@@ -684,12 +691,35 @@ describe('EcfService', () => {
         'uuid-abc',
         'Error en el monto',
         'tok-123',
+        { rncEmisor: '132943058', tipoEcf: 31, encf: 'E310000000007' },
       );
       expect(result).toEqual({
         id: '1',
         estado: 'cancelled',
         mensaje: 'Comprobante cancelado',
       });
+    });
+
+    it('anula sin datos de rango (undefined) si el e-CF no tiene tipoEcf/encf reconocibles', async () => {
+      const mockEcf = { id: '1', estado: 'transmitted', uuid: 'uuid-abc', rncEmisor: '132943058' };
+      mockEcfRepository.findOne.mockResolvedValue(mockEcf);
+      mockUserRepository.findOne.mockResolvedValue({ id: 'user-id', tokenDgii: 'tok-123' });
+      mockDgiiService.cancelEcf.mockResolvedValue({
+        uuid: 'uuid-abc',
+        estado: 'Cancelado',
+        codigo: '200',
+        mensaje: 'Comprobante cancelado',
+      });
+      mockEcfRepository.save.mockImplementation((data: any) => Promise.resolve(data));
+
+      await service.cancelEcf('1', 'empresa-id', 'user-id', 'Error en el monto');
+
+      expect(mockDgiiService.cancelEcf).toHaveBeenCalledWith(
+        'uuid-abc',
+        'Error en el monto',
+        'tok-123',
+        undefined,
+      );
     });
   });
 });

@@ -20,7 +20,7 @@ import { User } from '../../auth/entities/user.entity';
 import { CreateEcfDto } from '../dto/create-ecf.dto';
 import { UpdateEcfDto } from '../dto/update-ecf.dto';
 import { XsdValidatorService } from '../../validation/xsd-validator.service';
-import { EcfXmlService } from './ecf-xml.service';
+import { EcfXmlService, TIPO_ECF_MAP } from './ecf-xml.service';
 import { EcfSigningService } from './ecf-signing.service';
 import { NcfSequenceService } from './ncf-sequence.service';
 import { DgiiService } from '../../dgii/dgii.service';
@@ -491,7 +491,17 @@ export class EcfService {
     }
 
     const token = await this.obtenerTokenDgii(usuarioId);
-    const resultado = await this.dgiiService.cancelEcf(ecf.uuid, motivo, token);
+
+    // Datos para construir el ANECF (anulación de rangos) en modo real; en
+    // modo mock DgiiService los ignora. ecf.encf siempre debe existir aquí:
+    // transmitEcf exige xmlFirmado+encf antes de asignar ecf.uuid.
+    const tipoEcfNumerico = TIPO_ECF_MAP[ecf.tipoEcf];
+    const rango =
+      ecf.encf && tipoEcfNumerico
+        ? { rncEmisor: ecf.rncEmisor, tipoEcf: tipoEcfNumerico, encf: ecf.encf }
+        : undefined;
+
+    const resultado = await this.dgiiService.cancelEcf(ecf.uuid, motivo, token, rango);
 
     ecf.estado = 'cancelled';
     await this.ecfRepository.save(ecf);

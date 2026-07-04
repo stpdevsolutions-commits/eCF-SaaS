@@ -1,9 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { Signature } from 'dgii-ecf';
+import type { DGIIDocumentType } from 'dgii-ecf';
 import { DgiiCertificateService } from '../../dgii/dgii-certificate.service';
 
 /**
- * Firma XMLDSig de e-CF (DGII República Dominicana).
+ * Firma XMLDSig de documentos DGII (e-CF y otros, ej. ANECF) para
+ * República Dominicana.
  *
  * La firma (C14N, digest SHA-256, RSA-SHA256, empaquetado del elemento
  * <Signature>) la realiza `Signature` de la librería `dgii-ecf`, que
@@ -18,10 +20,14 @@ export class EcfSigningService {
 
   constructor(private certService: DgiiCertificateService) {}
 
-  /** Firma el XML con XMLDSig enveloped (DGII-compliant) usando el certificado activo. */
-  async signXml(xmlContent: string): Promise<string> {
+  /**
+   * Firma el XML con XMLDSig enveloped (DGII-compliant) usando el certificado
+   * activo. `rootElName` identifica el tipo de documento DGII que se firma
+   * (por defecto 'ECF'; también se usa 'ANECF' para anulación de rangos).
+   */
+  async signXml(xmlContent: string, rootElName: DGIIDocumentType = 'ECF'): Promise<string> {
     const signature = await this.getSignature();
-    return signature.signXml(xmlContent, 'ECF');
+    return signature.signXml(xmlContent, rootElName);
   }
 
   /** Expone el PEM del certificado activo (útil para diagnóstico). */

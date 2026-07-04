@@ -3,6 +3,8 @@ import { ConfigService } from '@nestjs/config';
 import ECF, { ENVIRONMENT, setAuthToken, convertECF32ToRFCE, Signature } from 'dgii-ecf';
 import { Ecf } from '../ecf/entities/ecf.entity';
 import { DgiiCertificateService } from './dgii-certificate.service';
+import { EcfAnulacionService } from '../ecf/services/ecf-anulacion.service';
+import { EcfSigningService } from '../ecf/services/ecf-signing.service';
 
 export interface DgiiAuthResponse {
   token: string;
@@ -15,21 +17,24 @@ interface DgiiTransmitResponse {
   mensajes: string[];
 }
 
+/** Datos del e-CF necesarios para construir el ANECF (anulación de rangos). */
+export interface AnulacionRango {
+  rncEmisor: string;
+  tipoEcf: number;
+  encf: string;
+}
+
 /** Umbral normativo DGII: por debajo de este monto, el e-CF 32 (Factura de
  * Consumo Electrónica) se transmite como Resumen (RFCE) en vez de e-CF completo. */
 const RFCE_MONTO_MAXIMO = 250_000;
 
 /**
  * Integración con la DGII (semilla → firma → token, transmisión, consulta de
- * estado). Cuando hay certificado P12 real configurado (ver
- * DgiiCertificateService), usa la librería `dgii-ecf` contra el ambiente
+ * estado, anulación de rangos). Cuando hay certificado P12 real configurado
+ * (ver DgiiCertificateService), usa la librería `dgii-ecf` contra el ambiente
  * indicado por DGII_ENVIRONMENT (TesteCF/CerteCF/eCF). Sin certificado real
  * (dev por defecto), responde con datos simulados — mismo contrato, para no
  * requerir credenciales en desarrollo.
- *
- * La anulación de rangos (ANECF) NO está implementada en modo real: requiere
- * un generador de XML de anulación para el que aún no tenemos el XSD. Es lo
- * único pendiente además de las credenciales — ver cancelEcf().
  */
 @Injectable()
 export class DgiiService {
@@ -39,6 +44,8 @@ export class DgiiService {
   constructor(
     private configService: ConfigService,
     private certificateService: DgiiCertificateService,
+    private anulacionService: EcfAnulacionService,
+    private signingService: EcfSigningService,
   ) {}
 
   async authenticate(
@@ -193,7 +200,21 @@ export class DgiiService {
     }
   }
 
-  async cancelEcf(uuid: string, motivo: string, token: string): Promise<any> {
+  /**
+   * Cancela (anula) un eNCF ante la DGII.
+   *
+   * En modo mock devuelve un resultado simulado fijo (sin cambios).
+   * En modo real construye y firma el XML ANECF (anulación de rangos, en
+   * este caso un rango de un solo eNCF) y lo envía con `client.voidENCF`.
+   * Requiere `rango` (RNC emisor, tipo de e-CF y eNCF puntual) — sin él no
+   * es posible construir el documento ANECF.
+   */
+  async cancelEcf(
+    uuid: string,
+    motivo: string,
+    token: string,
+    rango?: AnulacionRango,
+  ): Promise<any> {
     if (!(await this.modoReal())) {
       return {
         uuid,
@@ -204,16 +225,53 @@ export class DgiiService {
       };
     }
 
-    // La anulación real requiere enviar un XML de solicitud (ANECF) firmado
-    // con los rangos de eNCF a anular; aún no tenemos el XSD de ese documento
-    // ni un generador para él (ver src/validation/schemas). Es trabajo
-    // adicional a las credenciales, no bloqueado por ellas.
+    if (!rango) {
+      throw new HttpException(
+        'Anulación real de e-CF requiere RNC emisor, tipo de e-CF y el eNCF a anular',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    // dgii-ecf se autentica con el certificado/semilla propios (getClient),
+    // no con el token de sesión REST — se conserva el parámetro por
+    // compatibilidad con el controlador existente.
     void token;
-    throw new HttpException(
-      'Anulación real de e-CF (ANECF) aún no implementada: falta el generador de XML de anulación de rangos. ' +
-        'Autenticación, transmisión y consulta de estado ya usan la DGII real.',
-      HttpStatus.NOT_IMPLEMENTED,
-    );
+
+    try {
+      const xmlSinFirmar = this.anulacionService.generateXmlParaUnEncf(
+        rango.rncEmisor,
+        rango.tipoEcf,
+        rango.encf,
+      );
+      const signedXml = await this.signingService.signXml(xmlSinFirmar, 'ANECF');
+      const client = await this.getClient();
+      const fileName = `${rango.rncEmisor}${rango.encf}.xml`;
+      const respuesta = await client.voidENCF(signedXml, fileName);
+
+      if (!respuesta) {
+        throw new HttpException(
+          'La DGII no devolvió respuesta para la anulación',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      return {
+        uuid,
+        estado: 'Cancelado',
+        motivo,
+        codigo: respuesta.codigo,
+        mensaje: (respuesta.mensajes ?? []).join('; ') || respuesta.nombre,
+        rnc: respuesta.rnc,
+        nombre: respuesta.nombre,
+      };
+    } catch (error) {
+      if (error instanceof HttpException) throw error;
+      this.logger.error(`Error anulando eNCF en DGII: ${error}`);
+      throw new HttpException(
+        'Error en anulación DGII',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
   }
 
   // ── Cliente DGII (dgii-ecf) ──────────────────────────────────────────────────
