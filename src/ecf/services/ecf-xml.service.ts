@@ -39,7 +39,6 @@ export class EcfXmlService {
     const eNCF = ecf.encf ?? this.buildENCF(tipoNumerico, secuencia);
     const now = new Date();
     const fechaEmision = this.toFecha(ecf.fechaEmision ?? now);
-    const vencimientoSecuencia = this.toFecha(this.addYears(now, 1));
     const fechaHoraFirma = this.toDateTimeLocal(now);
 
     // TypeORM devuelve columnas NUMERIC como strings — convertir explícitamente.
@@ -55,7 +54,6 @@ export class EcfXmlService {
       '    <IdDoc>',
       `      <TipoeCF>${tipoNumerico}</TipoeCF>`,
       `      <eNCF>${eNCF}</eNCF>`,
-      `      <FechaVencimientoSecuencia>${vencimientoSecuencia}</FechaVencimientoSecuencia>`,
       // TipoIngresos: 01 = Ingresos por operaciones (No financieros)
       '      <TipoIngresos>01</TipoIngresos>',
       // TipoPago: 1 = Contado
@@ -77,10 +75,12 @@ export class EcfXmlService {
 
     if (itbis > 0) {
       // Gravado con ITBIS tasa 1 (18 %)
+      // Orden exigido por el XSD de la DGII dentro de <Totales>: TotalITBIS
+      // (total general) va ANTES que TotalITBIS1 (total por tasa 1).
       lines.push(`      <MontoGravadoI1>${this.r2(gravado)}</MontoGravadoI1>`);
       lines.push('      <ITBIS1>18</ITBIS1>');
-      lines.push(`      <TotalITBIS1>${this.r2(itbis)}</TotalITBIS1>`);
       lines.push(`      <TotalITBIS>${this.r2(itbis)}</TotalITBIS>`);
+      lines.push(`      <TotalITBIS1>${this.r2(itbis)}</TotalITBIS1>`);
     } else {
       // Sin ITBIS → monto exento
       lines.push(`      <MontoExento>${this.r2(total)}</MontoExento>`);
@@ -178,15 +178,15 @@ export class EcfXmlService {
     return `${dd}-${mm}-${yyyy}`;
   }
 
-  /** Formato de fecha-hora ISO 8601 sin zona: YYYY-MM-DDTHH:MM:SS */
+  /**
+   * Formato de fecha-hora exigido por el XSD de la DGII para FechaHoraFirma:
+   * DD-MM-YYYY HH:MM:SS (DateTimeValidationType), no ISO 8601.
+   */
   private toDateTimeLocal(date: Date): string {
-    return date.toISOString().split('.')[0];
-  }
-
-  private addYears(date: Date, years: number): Date {
-    const d = new Date(date);
-    d.setFullYear(d.getFullYear() + years);
-    return d;
+    const hh = String(date.getHours()).padStart(2, '0');
+    const mi = String(date.getMinutes()).padStart(2, '0');
+    const ss = String(date.getSeconds()).padStart(2, '0');
+    return `${this.toFecha(date)} ${hh}:${mi}:${ss}`;
   }
 
   /** Redondea a 2 decimales y devuelve string para el XML. */
