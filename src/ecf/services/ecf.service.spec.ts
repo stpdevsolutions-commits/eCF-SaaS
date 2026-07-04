@@ -1,4 +1,5 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { EcfService } from './ecf.service';
@@ -91,9 +92,17 @@ describe('EcfService', () => {
       nextSequence: jest.fn().mockResolvedValue(1),
     };
 
+    const mockConfigService = {
+      get: jest.fn().mockReturnValue(undefined),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         EcfService,
+        {
+          provide: ConfigService,
+          useValue: mockConfigService,
+        },
         {
           provide: getRepositoryToken(Ecf),
           useValue: mockEcfRepository,

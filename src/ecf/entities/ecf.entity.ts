@@ -92,6 +92,10 @@ export class Ecf {
   @Column({ type: 'varchar', nullable: true })
   codigoSeguridadDgii?: string;
 
+  /** URL de consulta de timbre (QR de la representación impresa), generada al firmar. */
+  @Column({ type: 'text', nullable: true })
+  qrUrl?: string;
+
   @Column({ type: 'text', nullable: true })
   xmlFirmado?: string;
 
