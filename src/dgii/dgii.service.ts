@@ -1,6 +1,6 @@
 import { Injectable, HttpException, HttpStatus, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import ECF, { ENVIRONMENT, setAuthToken } from 'dgii-ecf';
+import ECF, { ENVIRONMENT, setAuthToken, convertECF32ToRFCE, Signature } from 'dgii-ecf';
 import { Ecf } from '../ecf/entities/ecf.entity';
 import { DgiiCertificateService } from './dgii-certificate.service';
 
@@ -14,6 +14,10 @@ interface DgiiTransmitResponse {
   codigo: string;
   mensajes: string[];
 }
+
+/** Umbral normativo DGII: por debajo de este monto, el e-CF 32 (Factura de
+ * Consumo Electrónica) se transmite como Resumen (RFCE) en vez de e-CF completo. */
+const RFCE_MONTO_MAXIMO = 250_000;
 
 /**
  * Integración con la DGII (semilla → firma → token, transmisión, consulta de
@@ -96,6 +100,38 @@ export class DgiiService {
       setAuthToken(token);
       const client = await this.getClient();
       const fileName = `${ecf.rncEmisor}${ecf.encf}.xml`;
+
+      // Facturas de Consumo Electrónicas (e-CF 32) por menos de RD$250,000 se
+      // transmiten como Resumen (RFCE) en vez del e-CF completo — es lo que
+      // exige la normativa DGII para este tipo/monto (endpoint distinto).
+      if (ecf.tipoEcf === 'e-CF_32_v_1_0' && Number(ecf.montoTotal) < RFCE_MONTO_MAXIMO) {
+        const { xml: rfceXml } = convertECF32ToRFCE(ecf.xmlFirmado);
+
+        // El RFCE resultante de convertECF32ToRFCE NO viene firmado — hay que
+        // firmarlo aparte (rootElName 'RFCE') con el mismo certificado antes
+        // de enviarlo, o la DGII lo rechaza por estructura XML incompleta.
+        const { key, cert } = await this.certificateService.getP12ReaderData();
+        const signedRfceXml = new Signature(key ?? '', cert ?? '').signXml(rfceXml, 'RFCE');
+
+        const respuestaResumen = await client.sendSummary(signedRfceXml, fileName);
+
+        if (!respuestaResumen) {
+          throw new HttpException(
+            'La DGII no devolvió respuesta para el resumen (RFCE)',
+            HttpStatus.BAD_REQUEST,
+          );
+        }
+
+        return {
+          // El flujo RFCE no genera un trackId como sendElectronicDocument —
+          // se usa el eNCF como identificador. Limitación conocida: no hay
+          // forma de rastrear este envío por trackId de la misma manera.
+          uuid: ecf.encf,
+          codigo: String(respuestaResumen.codigo),
+          mensajes: respuestaResumen.mensajes?.map((m) => m.valor) ?? [],
+        };
+      }
+
       const respuesta = await client.sendElectronicDocument(ecf.xmlFirmado, fileName);
 
       if (!respuesta?.trackId) {
