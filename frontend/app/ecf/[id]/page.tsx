@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import QRCode from 'qrcode';
 import AuthGuard from '@/components/AuthGuard';
 import Navbar from '@/components/Navbar';
 import { getEcf, validateEcf, signEcf, transmitEcf, checkEcfStatus, cancelEcf } from '@/lib/api';
@@ -78,11 +79,30 @@ function EcfDetailContent() {
   const [showXml, setShowXml] = useState(false);
   const [showCancelForm, setShowCancelForm] = useState(false);
   const [motivoCancelacion, setMotivoCancelacion] = useState('');
+  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
 
   useEffect(() => {
     loadEcf();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  useEffect(() => {
+    if (!ecf?.qrUrl) {
+      setQrDataUrl(null);
+      return;
+    }
+    let cancelado = false;
+    QRCode.toDataURL(ecf.qrUrl, { margin: 1, width: 200 })
+      .then((dataUrl) => {
+        if (!cancelado) setQrDataUrl(dataUrl);
+      })
+      .catch(() => {
+        if (!cancelado) setQrDataUrl(null);
+      });
+    return () => {
+      cancelado = true;
+    };
+  }, [ecf?.qrUrl]);
 
   async function loadEcf() {
     setLoading(true);
@@ -381,6 +401,34 @@ function EcfDetailContent() {
                 <InfoRow label="Código de Seguridad" value={ecf.codigoSeguridadDgii} />
               </dl>
             </div>
+
+            {/* Representación impresa: QR + código de seguridad */}
+            {ecf.codigoSeguridadDgii && (
+              <div className="card p-6">
+                <h2 className="text-base font-semibold text-gray-900 mb-4">Representación Impresa</h2>
+                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+                  {qrDataUrl && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={qrDataUrl}
+                      alt="Código QR de consulta de timbre"
+                      width={140}
+                      height={140}
+                      className="rounded-lg border border-gray-200"
+                    />
+                  )}
+                  <div>
+                    <p className="text-sm text-gray-500">Código de seguridad</p>
+                    <p className="font-mono text-lg font-bold text-gray-900 tracking-widest">
+                      {ecf.codigoSeguridadDgii}
+                    </p>
+                    <p className="text-xs text-gray-400 mt-2 max-w-md break-all">
+                      Escanea el QR o visita el enlace para verificar este comprobante en la DGII.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Emisor / Comprador */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

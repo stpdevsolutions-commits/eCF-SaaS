@@ -11,12 +11,13 @@ draft → validated → signed → transmitted → accepted / rejected → cance
 ```
 
 - Generación de XML para los 10 tipos de e-CF (31, 32, 33, 34, 41, 43, 44, 45, 46, 47) con validación estructural contra los XSD de la DGII.
-- Firma XMLDSig real (RSA-2048 / SHA-256 / canonicalización C14N) usando `node-forge`. En desarrollo se usa un certificado autofirmado generado en memoria (**no válido para producción**).
+- Firma XMLDSig real (RSA-2048 / SHA-256 / canonicalización C14N) usando la librería [`dgii-ecf`](https://github.com/victors1681/dgii-ecf) (`Signature`), DGII-compliant. En desarrollo se firma con un certificado autofirmado generado en memoria; en producción se usa el certificado .p12 real de un PSC (INDOTEL) en cuanto se configure.
+- Código de seguridad de 6 dígitos y QR de representación impresa (consulta de timbre), calculados localmente a partir de la firma — no requieren transmisión ni credenciales DGII.
 - Retenciones ISR/ITBIS por línea: obligatorias para e-CF 41 (compras) y opcionales para 31/33/34.
 - Asignación de eNCF (formato `E` + tipo 2 dígitos + secuencia 10 dígitos, ej. `E310000000001`), asignado una sola vez por comprobante.
 - Reportes: resumen agregado (totales, por estado, por tipo) y exportación a CSV.
-- Integración DGII en **modo MOCK** cuando `NODE_ENV=development`. La autenticación real con Semilla (ambiente TesteCF) está pendiente de credenciales.
-- Frontend Next.js 14 (App Router) con login, dashboard, creación/detalle de e-CF, reportes y panel DGII.
+- Integración DGII vía la librería `dgii-ecf`: autenticación (semilla+firma), transmisión y consulta de estado ya usan las llamadas reales de la DGII cuando hay un certificado P12 configurado (`DGII_CERT_P12_BASE64` + `DGII_CERT_PASSPHRASE`); sin ese certificado (por defecto en dev), responde en **modo MOCK** con el mismo contrato. Solo faltan las credenciales del ambiente TesteCF — no hay cambios de código pendientes para ese flujo. La anulación de rangos (ANECF) sigue sin implementar en modo real (falta el XSD de ese documento).
+- Frontend Next.js 14 (App Router) con login, dashboard, creación/detalle de e-CF (incluye QR y código de seguridad), reportes y panel DGII.
 
 ## Stack
 
@@ -25,7 +26,8 @@ draft → validated → signed → transmitted → accepted / rejected → cance
 | Backend | NestJS 10 + TypeScript |
 | Base de datos | PostgreSQL 15 (Docker) + TypeORM 0.3 |
 | Autenticación | JWT (Passport) |
-| Firma digital | node-forge (XMLDSig, RSA-2048/SHA-256/C14N) |
+| Firma digital | `dgii-ecf` (XMLDSig DGII-compliant, RSA-2048/SHA-256/C14N) + node-forge (certificados) |
+| Integración DGII | `dgii-ecf` (semilla/firma/token, transmisión, estado, QR/código de seguridad) |
 | Documentación API | Swagger (`/api/docs`) |
 | Frontend | Next.js 14 (App Router) + Tailwind CSS |
 | Tests | Jest (unitarios) + Jest/Supertest (e2e) |
@@ -75,9 +77,15 @@ DATABASE_USER=postgres
 DATABASE_PASSWORD=postgres
 DATABASE_NAME=ecf_saas
 JWT_SECRET=dev-secret-key
+
+# Integración DGII real (opcional): sin esto, firma/DGII quedan en modo mock/dev.
+# Ver .env.example para el detalle.
+DGII_ENVIRONMENT=TesteCF
+DGII_CERT_P12_BASE64=
+DGII_CERT_PASSPHRASE=
 ```
 
-> En desarrollo TypeORM usa `synchronize: true` (crea/actualiza el esquema automáticamente). No hay migraciones formales todavía.
+> En desarrollo TypeORM usa `synchronize: true` (crea/actualiza el esquema automáticamente). Las migraciones formales viven en `src/database/migrations` (ver `src/database/migrations/README.md`).
 
 ### 4. Poblar datos de prueba (seed)
 
@@ -198,7 +206,9 @@ src/
 │   ├── entities/          # Ecf, LineaEcf
 │   └── dto/
 ├── validation/            # Validación estructural + esquemas XSD (e-CF 31–47)
-├── dgii/                  # Integración DGII (mock en desarrollo)
+├── dgii/                  # Integración DGII (dgii-ecf real si hay P12; mock si no)
+│   ├── dgii.service.ts             # Autenticación/transmisión/estado/anulación
+│   └── dgii-certificate.service.ts # Resuelve el certificado (P12 real o autofirmado dev)
 ├── database/seeders/      # Seed de datos de prueba
 ├── common/guards/         # JwtAuthGuard
 └── main.ts                # Prefijo /api, ValidationPipe, Swagger
@@ -217,15 +227,18 @@ test/                      # Tests e2e (jest-e2e.json + app.e2e-spec.ts)
 - [x] Autenticación JWT + Swagger
 - [x] PostgreSQL + TypeORM, CRUD de e-CF
 - [x] Generación de XML para los 10 tipos de e-CF y validación estructural (XSD)
-- [x] Firma digital XMLDSig real (certificado autofirmado en dev)
+- [x] Firma digital XMLDSig real vía `dgii-ecf` (certificado autofirmado en dev; P12 real cuando se configure)
 - [x] Ciclo de vida completo con la DGII (transmitir, consultar estado, cancelar) en modo mock
 - [x] Retenciones ISR/ITBIS (e-CF 31/33/34/41)
 - [x] Reportes (resumen y export CSV)
 - [x] Frontend Next.js 14 (login, dashboard, e-CF, reportes, DGII)
 - [x] Tests unitarios backend
+- [x] Wiring real de autenticación/transmisión/consulta de estado con `dgii-ecf` (falta solo activar con credenciales)
+- [x] Código de seguridad (6 dígitos) y QR de representación impresa (offline, no requieren credenciales)
 
 ### Pendiente
-- [ ] Autenticación real con Semilla DGII (ambiente TesteCF; bloqueado por credenciales)
+- [ ] Credenciales del ambiente TesteCF + certificado .p12 de un PSC (INDOTEL) — único bloqueo para producción real
+- [ ] Anulación real de e-CF (ANECF): falta el XSD del documento de anulación de rangos y su generador de XML
 - [ ] Certificado digital de producción emitido por un PSC acreditado por INDOTEL
 - [ ] Migraciones formales de TypeORM (hoy `synchronize` solo en desarrollo)
 - [ ] Tests de frontend

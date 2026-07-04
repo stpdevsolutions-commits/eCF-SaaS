@@ -17,3 +17,8 @@ frontend/.next/
 frontend/out/
 frontend/.env.local
 frontend/*.tsbuildinfo
+
+# Certificados digitales reales (nunca deben ir al repo)
+*.p12
+*.pfx
+Facturacion Electronica/

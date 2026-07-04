@@ -126,7 +126,6 @@ export class XsdValidatorService {
       ['<IdDoc>', 'IdDoc'],
       ['<TipoeCF>', 'TipoeCF'],
       ['<eNCF>', 'eNCF'],
-      ['<FechaVencimientoSecuencia>', 'FechaVencimientoSecuencia'],
       ['<TipoIngresos>', 'TipoIngresos'],
       ['<TipoPago>', 'TipoPago'],
       ['<Emisor>', 'Emisor'],

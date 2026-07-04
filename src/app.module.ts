@@ -41,6 +41,13 @@ import { LineaEcf } from './ecf/entities/linea-ecf.entity';
         }),
         JWT_EXPIRATION: Joi.string().default('24h'),
         CORS_ORIGIN: Joi.string().default('http://localhost:3005'),
+        // Integración DGII real — opcionales: mientras no estén presentes,
+        // la app sigue en modo mock (ver DgiiService/EcfSigningService).
+        DGII_ENVIRONMENT: Joi.string()
+          .valid('TesteCF', 'CerteCF', 'eCF')
+          .default('TesteCF'),
+        DGII_CERT_P12_BASE64: Joi.string().optional().allow(''),
+        DGII_CERT_PASSPHRASE: Joi.string().optional().allow(''),
       }),
       validationOptions: {
         allowUnknown: true, // permite otras variables de entorno del sistema

@@ -296,6 +296,27 @@ describe('EcfDetailPage — cancelación', () => {
   });
 });
 
+describe('EcfDetailPage — representación impresa', () => {
+  it('muestra el código de seguridad cuando el e-CF fue firmado', async () => {
+    mockEcf({
+      estado: 'signed',
+      codigoSeguridadDgii: 'AB12CD',
+      qrUrl: 'https://ecf.dgii.gov.do/testecf/consultatimbre?rncemisor=101123456',
+    });
+    await renderDetail();
+
+    expect(screen.getByText('Representación Impresa')).toBeInTheDocument();
+    expect(screen.getAllByText('AB12CD').length).toBeGreaterThan(0);
+  });
+
+  it('no muestra la sección si el e-CF aún no está firmado', async () => {
+    mockEcf({ estado: 'draft' });
+    await renderDetail();
+
+    expect(screen.queryByText('Representación Impresa')).not.toBeInTheDocument();
+  });
+});
+
 describe('EcfDetailPage — carga', () => {
   it('muestra el error si el comprobante no se puede cargar', async () => {
     getEcfMock.mockRejectedValueOnce(new Error('Comprobante no encontrado'));

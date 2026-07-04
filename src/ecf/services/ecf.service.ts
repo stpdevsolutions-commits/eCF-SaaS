@@ -1,24 +1,34 @@
 import {
   Injectable,
+  Logger,
   NotFoundException,
   UnauthorizedException,
   BadRequestException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import {
+  ENVIRONMENT,
+  generateEcfQRCodeURL,
+  generateFcQRCodeURL,
+  getCodeSixDigitfromSignature,
+} from 'dgii-ecf';
 import { Ecf } from '../entities/ecf.entity';
 import { LineaEcf } from '../entities/linea-ecf.entity';
 import { User } from '../../auth/entities/user.entity';
 import { CreateEcfDto } from '../dto/create-ecf.dto';
 import { UpdateEcfDto } from '../dto/update-ecf.dto';
 import { XsdValidatorService } from '../../validation/xsd-validator.service';
-import { EcfXmlService } from './ecf-xml.service';
+import { EcfXmlService, TIPO_ECF_MAP } from './ecf-xml.service';
 import { EcfSigningService } from './ecf-signing.service';
 import { NcfSequenceService } from './ncf-sequence.service';
 import { DgiiService } from '../../dgii/dgii.service';
 
 @Injectable()
 export class EcfService {
+  private readonly logger = new Logger(EcfService.name);
+
   constructor(
     @InjectRepository(Ecf)
     private ecfRepository: Repository<Ecf>,
@@ -31,6 +41,7 @@ export class EcfService {
     private signingService: EcfSigningService,
     private ncfSequenceService: NcfSequenceService,
     private dgiiService: DgiiService,
+    private configService: ConfigService,
   ) {}
 
   /**
@@ -319,10 +330,15 @@ export class EcfService {
     }
 
     // Firmar con XMLDSig (RSA-2048 / SHA-256 / C14N / X509Certificate)
-    const xmlFirmado = this.signingService.signXml(xmlSinFirmar);
+    const xmlFirmado = await this.signingService.signXml(xmlSinFirmar);
 
     ecf.xmlFirmado = xmlFirmado;
     ecf.estado = 'signed';
+
+    // Código de seguridad + QR de representación impresa: se derivan
+    // localmente de la firma, no requieren transmisión ni credenciales DGII.
+    this.asignarRepresentacionImpresa(ecf, xmlFirmado);
+
     await this.ecfRepository.save(ecf);
 
     return {
@@ -330,9 +346,59 @@ export class EcfService {
       estado: ecf.estado,
       encf: ecf.encf,
       xmlFirmado,
+      codigoSeguridadDgii: ecf.codigoSeguridadDgii,
+      qrUrl: ecf.qrUrl,
       mensaje: 'Comprobante firmado exitosamente con XMLDSig (RSA-2048 / SHA-256)',
       advertencias: validation.warnings,
     };
+  }
+
+  /**
+   * Calcula el código de seguridad de 6 dígitos (primeros 6 del SignatureValue)
+   * y la URL del QR de consulta de timbre para la representación impresa.
+   * Ambos se derivan offline de la firma, sin depender de la DGII.
+   */
+  private asignarRepresentacionImpresa(ecf: Ecf, xmlFirmado: string): void {
+    try {
+      const codigoSeguridad = getCodeSixDigitfromSignature(xmlFirmado);
+      if (!codigoSeguridad) {
+        return;
+      }
+      ecf.codigoSeguridadDgii = codigoSeguridad;
+
+      const environment =
+        (this.configService.get<string>('DGII_ENVIRONMENT') as ENVIRONMENT) ||
+        ENVIRONMENT.DEV;
+      const montoTotal = Number(ecf.montoTotal);
+
+      ecf.qrUrl =
+        ecf.tipoEcf === 'e-CF_32_v_1_0'
+          ? generateFcQRCodeURL(ecf.rncEmisor, ecf.encf!, montoTotal, codigoSeguridad, environment)
+          : generateEcfQRCodeURL(
+              ecf.rncEmisor,
+              ecf.rncComprador,
+              ecf.encf!,
+              montoTotal.toFixed(2),
+              this.toFechaDgii(ecf.fechaEmision),
+              this.toFechaDgii(new Date()),
+              codigoSeguridad,
+              environment,
+            );
+    } catch (error) {
+      this.logger.warn(
+        `No se pudo calcular código de seguridad/QR para e-CF ${ecf.id}: ${
+          error instanceof Error ? error.message : error
+        }`,
+      );
+    }
+  }
+
+  /** Formato de fecha DGII: DD-MM-YYYY (igual que EcfXmlService). */
+  private toFechaDgii(date: Date): string {
+    const dd = String(date.getDate()).padStart(2, '0');
+    const mm = String(date.getMonth() + 1).padStart(2, '0');
+    const yyyy = date.getFullYear();
+    return `${dd}-${mm}-${yyyy}`;
   }
 
   // ── Transmisión a la DGII ────────────────────────────────────────────────────
@@ -425,7 +491,17 @@ export class EcfService {
     }
 
     const token = await this.obtenerTokenDgii(usuarioId);
-    const resultado = await this.dgiiService.cancelEcf(ecf.uuid, motivo, token);
+
+    // Datos para construir el ANECF (anulación de rangos) en modo real; en
+    // modo mock DgiiService los ignora. ecf.encf siempre debe existir aquí:
+    // transmitEcf exige xmlFirmado+encf antes de asignar ecf.uuid.
+    const tipoEcfNumerico = TIPO_ECF_MAP[ecf.tipoEcf];
+    const rango =
+      ecf.encf && tipoEcfNumerico
+        ? { rncEmisor: ecf.rncEmisor, tipoEcf: tipoEcfNumerico, encf: ecf.encf }
+        : undefined;
+
+    const resultado = await this.dgiiService.cancelEcf(ecf.uuid, motivo, token, rango);
 
     ecf.estado = 'cancelled';
     await this.ecfRepository.save(ecf);

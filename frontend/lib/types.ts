@@ -39,6 +39,7 @@ export interface Ecf {
   moneda: string;
   uuid?: string;
   codigoSeguridadDgii?: string;
+  qrUrl?: string;
   xmlFirmado?: string;
   xmlValidacion?: string;
   lineas?: LineaEcf[];
