@@ -339,9 +339,24 @@ function EmpresaSection({
   );
   const [direccion, setDireccion] = useState(empresa.direccion ?? '');
   const [telefono, setTelefono] = useState(empresa.telefono ?? '');
+  const [logoBase64, setLogoBase64] = useState(empresa.logoBase64 ?? '');
   const [msg, setMsg] = useState('');
   const [error, setError] = useState('');
   const [guardando, setGuardando] = useState(false);
+
+  function handleLogoChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setError('');
+    if (file.size > 3_000_000) {
+      setError('El logo no debe superar 3MB');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => setLogoBase64(reader.result as string);
+    reader.onerror = () => setError('No se pudo leer el archivo del logo');
+    reader.readAsDataURL(file);
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -354,6 +369,7 @@ function EmpresaSection({
         nombreComercial: nombreComercial.trim(),
         direccion: direccion.trim(),
         telefono: telefono.trim(),
+        logoBase64,
       });
       onActualizada(actualizada);
       setMsg('Datos de la empresa actualizados');
@@ -433,6 +449,38 @@ function EmpresaSection({
             onChange={(e) => setTelefono(e.target.value)}
             className="input-field"
           />
+        </div>
+        <div>
+          <label htmlFor="logo" className="label">
+            Logo de la empresa
+          </label>
+          {logoBase64 && (
+            <div className="mb-2 flex items-center gap-3">
+              <img
+                src={logoBase64}
+                alt="Logo de la empresa"
+                className="h-16 w-auto object-contain border border-gray-200 rounded"
+              />
+              <button
+                type="button"
+                onClick={() => setLogoBase64('')}
+                className="text-xs text-red-600 hover:underline"
+              >
+                Quitar logo
+              </button>
+            </div>
+          )}
+          <input
+            id="logo"
+            type="file"
+            accept="image/png,image/jpeg,image/svg+xml,image/webp"
+            onChange={handleLogoChange}
+            className="input-field"
+          />
+          <p className="text-xs text-gray-400 mt-1">
+            Se mostrará en las facturas impresas. Formatos: PNG, JPEG, SVG o
+            WebP, máx. 3MB.
+          </p>
         </div>
 
         <button type="submit" disabled={guardando} className="btn-primary">

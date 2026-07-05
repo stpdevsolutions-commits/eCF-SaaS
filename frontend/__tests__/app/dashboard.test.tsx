@@ -1,11 +1,11 @@
 /**
- * Tests del dashboard (listado de comprobantes):
- * render del listado, estado vacío, filtro por estado y manejo de error.
+ * Tests del dashboard (consulta de comprobantes): render del listado con las
+ * nuevas columnas/acciones, estado vacío, filtros avanzados y manejo de error.
  */
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import DashboardPage from '@/app/dashboard/page';
-import { listEcf } from '@/lib/api';
+import { descargarXmlEcf, listEcf } from '@/lib/api';
 import { Ecf } from '@/lib/types';
 
 jest.mock('next/navigation', () => ({
@@ -15,18 +15,23 @@ jest.mock('next/navigation', () => ({
 
 jest.mock('@/lib/api', () => ({
   listEcf: jest.fn(),
+  descargarXmlEcf: jest.fn(),
 }));
 
 const listEcfMock = listEcf as jest.Mock;
+const descargarXmlEcfMock = descargarXmlEcf as jest.Mock;
 
-const ecfs: Ecf[] = [
-  {
+function baseEcf(overrides: Partial<Ecf> = {}): Ecf {
+  return {
     id: 'ecf-1',
     tipoEcf: 'e-CF_31_v_1_0',
     version: '1.0',
+    encf: 'E310000000001',
     fechaEmision: '2026-06-15T12:00:00.000Z',
     rncEmisor: '101123456',
     nombreEmisor: 'Mi Empresa SRL',
+    tipoPago: 1,
+    tipoIngresos: '01',
     rncComprador: '101987654',
     nombreComprador: 'Cliente Uno SA',
     estado: 'draft',
@@ -35,39 +40,40 @@ const ecfs: Ecf[] = [
     montoITBIS: 180,
     montoItbisRetenido: 0,
     montoRentaRetenido: 0,
+    aplicaPropinaLegal: false,
+    montoPropinaLegal: 0,
     moneda: 'RD',
     createdAt: '2026-06-15T12:00:00.000Z',
     updatedAt: '2026-06-15T12:00:00.000Z',
-  },
-  {
+    ...overrides,
+  };
+}
+
+const ecfs: Ecf[] = [
+  baseEcf(),
+  baseEcf({
     id: 'ecf-2',
     tipoEcf: 'e-CF_32_v_1_0',
-    version: '1.0',
+    encf: 'E320000000002',
     fechaEmision: '2026-06-16T12:00:00.000Z',
-    rncEmisor: '101123456',
-    nombreEmisor: 'Mi Empresa SRL',
     rncComprador: '131222333',
     nombreComprador: 'Cliente Dos SRL',
     estado: 'accepted',
     montoTotal: 590,
-    montoDescuento: 0,
     montoITBIS: 90,
-    montoItbisRetenido: 0,
-    montoRentaRetenido: 0,
-    moneda: 'RD',
     uuid: 'aabbccdd-1122-3344-5566-778899aabbcc',
-    createdAt: '2026-06-16T12:00:00.000Z',
-    updatedAt: '2026-06-16T12:00:00.000Z',
-  },
+  }),
 ];
 
 beforeEach(() => {
   localStorage.clear();
   localStorage.setItem('ecf_token', 'token-test');
+  listEcfMock.mockReset();
+  descargarXmlEcfMock.mockReset();
 });
 
 describe('DashboardPage', () => {
-  it('lista los comprobantes con tipo abreviado, comprador, estado y enlace al detalle', async () => {
+  it('lista los comprobantes con e-NCF, comprador, montos y estados', async () => {
     listEcfMock.mockResolvedValue(ecfs);
 
     render(<DashboardPage />);
@@ -76,23 +82,23 @@ describe('DashboardPage', () => {
     expect(screen.getByText('Cliente Dos SRL')).toBeInTheDocument();
     expect(screen.getByText('2 comprobantes')).toBeInTheDocument();
 
-    // Tipo abreviado: 'e-CF_31_v_1_0' → 'E31'
-    expect(screen.getByText('E31')).toBeInTheDocument();
-    expect(screen.getByText('E32')).toBeInTheDocument();
+    expect(screen.getByText('E310000000001')).toBeInTheDocument();
+    expect(screen.getByText('E320000000002')).toBeInTheDocument();
 
-    // Badges de estado (dentro de la tabla, para no chocar con el select de filtro)
     const table = screen.getByRole('table');
     expect(within(table).getByText('Borrador')).toBeInTheDocument();
-    expect(within(table).getByText('Aceptado')).toBeInTheDocument();
+    // "Aceptado" aparece dos veces: badge de Estado Factura + columna Estado DGII
+    expect(within(table).getAllByText('Aceptado').length).toBeGreaterThan(0);
 
-    // UUID truncado a 8 caracteres para el transmitido, 'Sin asignar' para el borrador
-    expect(screen.getByText('aabbccdd…')).toBeInTheDocument();
-    expect(screen.getByText('Sin asignar')).toBeInTheDocument();
-
-    // Enlaces al detalle
-    const links = screen.getAllByRole('link', { name: 'Ver →' });
+    // Acciones: Ver e Imprimir para todos, Editar solo para el borrador
+    const links = screen.getAllByRole('link', { name: 'Ver' });
     expect(links[0]).toHaveAttribute('href', '/ecf/ecf-1');
     expect(links[1]).toHaveAttribute('href', '/ecf/ecf-2');
+    expect(screen.getAllByRole('link', { name: 'Imprimir' })).toHaveLength(2);
+    expect(screen.getByRole('link', { name: 'Editar' })).toHaveAttribute(
+      'href',
+      '/ecf/ecf-1/editar',
+    );
   });
 
   it('muestra el estado vacío cuando no hay comprobantes', async () => {
@@ -107,25 +113,50 @@ describe('DashboardPage', () => {
     );
   });
 
-  it('al cambiar el filtro de estado vuelve a pedir el listado filtrado', async () => {
+  it('al filtrar por e-NCF y presionar Filtrar vuelve a pedir el listado con los filtros', async () => {
     const user = userEvent.setup();
     listEcfMock.mockResolvedValue(ecfs);
 
     render(<DashboardPage />);
     await screen.findByText('Cliente Uno SA');
 
-    expect(listEcfMock).toHaveBeenCalledWith(undefined);
+    expect(listEcfMock).toHaveBeenCalledWith({
+      estado: undefined,
+      rncComprador: undefined,
+      tipoEcf: undefined,
+      encf: undefined,
+      fechaDesde: undefined,
+      fechaHasta: undefined,
+    });
 
     listEcfMock.mockResolvedValue([ecfs[1]]);
-    await user.selectOptions(screen.getByRole('combobox'), 'accepted');
+    await user.type(screen.getByPlaceholderText('E310000000001'), 'E320000000002');
+    await user.click(screen.getByRole('button', { name: 'Filtrar' }));
 
     await waitFor(() => {
-      expect(listEcfMock).toHaveBeenLastCalledWith({ estado: 'accepted' });
+      expect(listEcfMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({ encf: 'E320000000002' }),
+      );
     });
     await waitFor(() => {
       expect(screen.queryByText('Cliente Uno SA')).not.toBeInTheDocument();
     });
     expect(screen.getByText('Cliente Dos SRL')).toBeInTheDocument();
+  });
+
+  it('descarga el XML al presionar el botón de acción', async () => {
+    const user = userEvent.setup();
+    listEcfMock.mockResolvedValue(ecfs);
+    descargarXmlEcfMock.mockResolvedValue(undefined);
+
+    render(<DashboardPage />);
+    await screen.findByText('Cliente Uno SA');
+
+    await user.click(screen.getAllByRole('button', { name: 'XML' })[0]);
+
+    await waitFor(() => {
+      expect(descargarXmlEcfMock).toHaveBeenCalledWith('ecf-1');
+    });
   });
 
   it('muestra el error si el listado falla', async () => {

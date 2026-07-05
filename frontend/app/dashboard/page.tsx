@@ -4,8 +4,9 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import AuthGuard from '@/components/AuthGuard';
 import Navbar from '@/components/Navbar';
-import { listEcf } from '@/lib/api';
+import { descargarXmlEcf, listEcf } from '@/lib/api';
 import { Ecf, EstadoEcf } from '@/lib/types';
+import { ESTADO_LABEL, ESTADOS_DGII, TIPOS_ECF } from '@/lib/constants-dgii';
 
 // ── Estado badge ─────────────────────────────────────────────────────────────
 
@@ -44,12 +45,6 @@ function formatMonto(monto: number, moneda: string): string {
   })}`;
 }
 
-function formatTipoEcf(tipo: string): string {
-  // e.g. 'E31' → 'E31', 'e-CF_31_v_1_0' → 'E31'
-  const match = tipo.match(/(\d{2})/);
-  return match ? `E${match[1]}` : tipo;
-}
-
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
@@ -64,23 +59,58 @@ function DashboardContent() {
   const [ecfs, setEcfs] = useState<Ecf[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [filtroEstado, setFiltroEstado] = useState('');
+  const [descargandoId, setDescargandoId] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetchData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filtroEstado]);
+  // Filtros avanzados (estilo Facturador Gratuito de la DGII)
+  const [tipoEcf, setTipoEcf] = useState('');
+  const [encf, setEncf] = useState('');
+  const [fechaDesde, setFechaDesde] = useState('');
+  const [fechaHasta, setFechaHasta] = useState('');
+  const [estado, setEstado] = useState('');
+  const [rncComprador, setRncComprador] = useState('');
 
   async function fetchData() {
     setLoading(true);
     setError('');
     try {
-      const data = await listEcf(filtroEstado ? { estado: filtroEstado } : undefined);
+      const data = await listEcf({
+        estado: estado || undefined,
+        rncComprador: rncComprador || undefined,
+        tipoEcf: tipoEcf || undefined,
+        encf: encf || undefined,
+        fechaDesde: fechaDesde || undefined,
+        fechaHasta: fechaHasta || undefined,
+      });
       setEcfs(data);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Error al cargar comprobantes');
     } finally {
       setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function limpiarFiltros() {
+    setTipoEcf('');
+    setEncf('');
+    setFechaDesde('');
+    setFechaHasta('');
+    setEstado('');
+    setRncComprador('');
+  }
+
+  async function handleDescargarXml(id: string) {
+    setDescargandoId(id);
+    try {
+      await descargarXmlEcf(id);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Error al descargar XML');
+    } finally {
+      setDescargandoId(null);
     }
   }
 
@@ -92,30 +122,98 @@ function DashboardContent() {
         {/* Page header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Comprobantes Fiscales</h1>
+            <h1 className="text-2xl font-bold text-gray-900">Consulta de Comprobantes</h1>
             <p className="text-sm text-gray-500 mt-0.5">
               {loading ? 'Cargando…' : `${ecfs.length} comprobante${ecfs.length !== 1 ? 's' : ''}`}
             </p>
           </div>
 
-          <div className="flex items-center gap-3">
-            {/* Estado filter */}
-            <select
-              value={filtroEstado}
-              onChange={(e) => setFiltroEstado(e.target.value)}
-              className="input-field w-auto text-sm"
-            >
-              <option value="">Todos los estados</option>
-              {Object.entries(ESTADO_CONFIG).map(([key, cfg]) => (
-                <option key={key} value={key}>
-                  {cfg.label}
-                </option>
-              ))}
-            </select>
+          <Link href="/ecf/nueva" className="btn-primary whitespace-nowrap">
+            + Nuevo e-CF
+          </Link>
+        </div>
 
-            <Link href="/ecf/nueva" className="btn-primary whitespace-nowrap">
-              + Nuevo e-CF
-            </Link>
+        {/* Filtros avanzados */}
+        <div className="card p-6 mb-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div>
+              <label className="label">Tipo e-CF</label>
+              <select value={tipoEcf} onChange={(e) => setTipoEcf(e.target.value)} className="input-field">
+                <option value="">Todos</option>
+                {TIPOS_ECF.map((t) => (
+                  <option key={t.value} value={t.value}>
+                    {t.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="label">e-NCF</label>
+              <input
+                type="text"
+                value={encf}
+                onChange={(e) => setEncf(e.target.value)}
+                placeholder="E310000000001"
+                className="input-field"
+              />
+            </div>
+            <div>
+              <label className="label">RNC Comprador</label>
+              <input
+                type="text"
+                value={rncComprador}
+                onChange={(e) => setRncComprador(e.target.value)}
+                className="input-field"
+              />
+            </div>
+            <div>
+              <label className="label">Fecha Emisión Desde</label>
+              <input
+                type="date"
+                value={fechaDesde}
+                onChange={(e) => setFechaDesde(e.target.value)}
+                className="input-field"
+              />
+            </div>
+            <div>
+              <label className="label">Fecha Emisión Hasta</label>
+              <input
+                type="date"
+                value={fechaHasta}
+                onChange={(e) => setFechaHasta(e.target.value)}
+                className="input-field"
+              />
+            </div>
+            <div>
+              <label className="label">Estado en DGII</label>
+              <select value={estado} onChange={(e) => setEstado(e.target.value)} className="input-field">
+                <option value="">Todos</option>
+                {ESTADOS_DGII.map((key) => (
+                  <option key={key} value={key}>
+                    {ESTADO_LABEL[key]}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="label">Estado Factura</label>
+              <select value={estado} onChange={(e) => setEstado(e.target.value)} className="input-field">
+                <option value="">Todos</option>
+                {Object.entries(ESTADO_LABEL).map(([key, label]) => (
+                  <option key={key} value={key}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 mt-4">
+            <button onClick={fetchData} className="btn-primary">
+              Filtrar
+            </button>
+            <button onClick={limpiarFiltros} className="btn-secondary">
+              Limpiar
+            </button>
           </div>
         </div>
 
@@ -160,72 +258,99 @@ function DashboardContent() {
                 <thead>
                   <tr className="border-b border-gray-200 bg-gray-50">
                     <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                      Tipo
+                      e-NCF
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                      eNCF / UUID
+                      RNC Comprador
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                      Comprador
+                      Razón Social Comprador
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                      Fecha Emisión
                     </th>
                     <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">
                       Monto Total
                     </th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                      Total ITBIS
+                    </th>
                     <th className="px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                      Estado
+                      Estado Factura
                     </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                      Fecha
+                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                      Estado DGII
                     </th>
-                    <th className="px-4 py-3" />
+                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                      Acciones
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {ecfs.map((ecf) => (
-                    <tr key={ecf.id} className="hover:bg-gray-50 transition-colors">
-                      <td className="px-4 py-3">
-                        <span className="font-mono font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded text-xs">
-                          {formatTipoEcf(ecf.tipoEcf)}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-gray-500 font-mono text-xs">
-                        {ecf.uuid ? (
-                          <span className="truncate max-w-[120px] block" title={ecf.uuid}>
-                            {ecf.uuid.substring(0, 8)}…
-                          </span>
-                        ) : (
-                          <span className="text-gray-300 italic">Sin asignar</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
-                        <p className="font-medium text-gray-900 truncate max-w-[180px]">
-                          {ecf.nombreComprador}
-                        </p>
-                        <p className="text-xs text-gray-400">{ecf.rncComprador}</p>
-                      </td>
-                      <td className="px-4 py-3 text-right font-medium text-gray-900">
-                        {formatMonto(ecf.montoTotal, ecf.moneda)}
-                      </td>
-                      <td className="px-4 py-3 text-center">
-                        <EstadoBadge estado={ecf.estado as EstadoEcf} />
-                      </td>
-                      <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">
-                        {new Date(ecf.fechaEmision).toLocaleDateString('es-DO', {
-                          day: '2-digit',
-                          month: 'short',
-                          year: 'numeric',
-                        })}
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <Link
-                          href={`/ecf/${ecf.id}`}
-                          className="text-blue-600 hover:text-blue-800 text-xs font-medium"
-                        >
-                          Ver →
-                        </Link>
-                      </td>
-                    </tr>
-                  ))}
+                  {ecfs.map((ecf) => {
+                    const esBorrador = ecf.estado === 'draft';
+                    const estadoDgii = ESTADOS_DGII.includes(ecf.estado)
+                      ? ESTADO_LABEL[ecf.estado]
+                      : '—';
+                    return (
+                      <tr key={ecf.id} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-4 py-3 font-mono text-xs text-gray-700">
+                          {ecf.encf ?? <span className="text-gray-300 italic">Sin asignar</span>}
+                        </td>
+                        <td className="px-4 py-3 text-gray-700 text-xs">{ecf.rncComprador}</td>
+                        <td className="px-4 py-3">
+                          <p className="font-medium text-gray-900 truncate max-w-[180px]">
+                            {ecf.nombreComprador}
+                          </p>
+                        </td>
+                        <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">
+                          {new Date(ecf.fechaEmision).toLocaleDateString('es-DO', {
+                            day: '2-digit',
+                            month: 'short',
+                            year: 'numeric',
+                          })}
+                        </td>
+                        <td className="px-4 py-3 text-right font-medium text-gray-900">
+                          {formatMonto(ecf.montoTotal, ecf.moneda)}
+                        </td>
+                        <td className="px-4 py-3 text-right text-gray-700">
+                          {formatMonto(ecf.montoITBIS, ecf.moneda)}
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <EstadoBadge estado={ecf.estado as EstadoEcf} />
+                        </td>
+                        <td className="px-4 py-3 text-center text-xs text-gray-500">{estadoDgii}</td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center justify-end gap-3 text-xs font-medium">
+                            <Link href={`/ecf/${ecf.id}`} className="text-blue-600 hover:text-blue-800">
+                              Ver
+                            </Link>
+                            <Link
+                              href={`/ecf/${ecf.id}/imprimir`}
+                              className="text-gray-500 hover:text-gray-700"
+                            >
+                              Imprimir
+                            </Link>
+                            <button
+                              onClick={() => handleDescargarXml(ecf.id)}
+                              disabled={descargandoId === ecf.id}
+                              className="text-gray-500 hover:text-gray-700"
+                            >
+                              {descargandoId === ecf.id ? 'Descargando…' : 'XML'}
+                            </button>
+                            {esBorrador && (
+                              <Link
+                                href={`/ecf/${ecf.id}/editar`}
+                                className="text-amber-600 hover:text-amber-800"
+                              >
+                                Editar
+                              </Link>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

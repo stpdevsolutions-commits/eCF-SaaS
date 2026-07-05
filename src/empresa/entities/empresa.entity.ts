@@ -36,6 +36,10 @@ export class Empresa {
   @Column({ type: 'varchar', length: 50, nullable: true })
   telefono?: string;
 
+  /** Logo de la empresa como data URL en base64 (ej. "data:image/png;base64,..."), mostrado en las facturas. */
+  @Column({ type: 'text', nullable: true })
+  logoBase64?: string;
+
   @Column({
     type: 'enum',
     enum: ['regimen_ordinario', 'regimen_simplificado', 'monotributo'],

@@ -44,7 +44,8 @@ export class EcfXmlService {
     // TypeORM devuelve columnas NUMERIC como strings — convertir explícitamente.
     const total = Number(ecf.montoTotal);
     const itbis = Number(ecf.montoITBIS);
-    const gravado = total - itbis;
+    const propina = Number(ecf.montoPropinaLegal);
+    const gravado = total - itbis - propina;
 
     const lines: string[] = [
       '<?xml version="1.0" encoding="UTF-8"?>',
@@ -54,21 +55,27 @@ export class EcfXmlService {
       '    <IdDoc>',
       `      <TipoeCF>${tipoNumerico}</TipoeCF>`,
       `      <eNCF>${eNCF}</eNCF>`,
-      // TipoIngresos: 01 = Ingresos por operaciones (No financieros)
-      '      <TipoIngresos>01</TipoIngresos>',
-      // TipoPago: 1 = Contado
-      '      <TipoPago>1</TipoPago>',
+      `      <TipoIngresos>${this.esc(ecf.tipoIngresos)}</TipoIngresos>`,
+      `      <TipoPago>${ecf.tipoPago}</TipoPago>`,
+      ...(ecf.terminoPago ? [`      <TerminoPago>${this.esc(ecf.terminoPago)}</TerminoPago>`] : []),
       '    </IdDoc>',
       '    <Emisor>',
       `      <RNCEmisor>${this.esc(ecf.rncEmisor)}</RNCEmisor>`,
       `      <RazonSocialEmisor>${this.esc(ecf.nombreEmisor)}</RazonSocialEmisor>`,
       // DireccionEmisor es requerida en el XSD (minOccurs=1)
-      '      <DireccionEmisor>Sin Dirección Registrada</DireccionEmisor>',
+      `      <DireccionEmisor>${this.esc(ecf.direccionEmisor || 'Sin Dirección Registrada')}</DireccionEmisor>`,
       `      <FechaEmision>${fechaEmision}</FechaEmision>`,
       '    </Emisor>',
       '    <Comprador>',
       `      <RNCComprador>${this.esc(ecf.rncComprador)}</RNCComprador>`,
+      ...(ecf.idExtranjeroComprador ? [`      <IdentificadorExtranjero>${this.esc(ecf.idExtranjeroComprador)}</IdentificadorExtranjero>`] : []),
       `      <RazonSocialComprador>${this.esc(ecf.nombreComprador)}</RazonSocialComprador>`,
+      ...(ecf.correoComprador ? [`      <CorreoComprador>${this.esc(ecf.correoComprador)}</CorreoComprador>`] : []),
+      ...(ecf.direccionComprador ? [`      <DireccionComprador>${this.esc(ecf.direccionComprador)}</DireccionComprador>`] : []),
+      ...(ecf.municipioComprador ? [`      <MunicipioComprador>${this.esc(ecf.municipioComprador)}</MunicipioComprador>`] : []),
+      ...(ecf.provinciaComprador ? [`      <ProvinciaComprador>${this.esc(ecf.provinciaComprador)}</ProvinciaComprador>`] : []),
+      ...(ecf.telefonoComprador ? [`      <TelefonoAdicional>${this.esc(ecf.telefonoComprador)}</TelefonoAdicional>`] : []),
+      ...(ecf.comentarioComprador ? [`      <InformacionAdicionalComprador>${this.esc(ecf.comentarioComprador)}</InformacionAdicionalComprador>`] : []),
       '    </Comprador>',
       '    <Totales>',
     ];
@@ -83,7 +90,18 @@ export class EcfXmlService {
       lines.push(`      <TotalITBIS1>${this.r2(itbis)}</TotalITBIS1>`);
     } else {
       // Sin ITBIS → monto exento
-      lines.push(`      <MontoExento>${this.r2(total)}</MontoExento>`);
+      lines.push(`      <MontoExento>${this.r2(total - propina)}</MontoExento>`);
+    }
+
+    if (ecf.aplicaPropinaLegal && propina > 0) {
+      // Propina Legal: impuesto adicional código 001, tasa fija 10% (ad valorem)
+      lines.push('      <ImpuestosAdicionales>');
+      lines.push('        <ImpuestoAdicional>');
+      lines.push('          <TipoImpuesto>001</TipoImpuesto>');
+      lines.push('          <TasaImpuestoAdicional>10</TasaImpuestoAdicional>');
+      lines.push(`          <MontoImpuestoSelectivoConsumoAdvalorem>${this.r2(propina)}</MontoImpuestoSelectivoConsumoAdvalorem>`);
+      lines.push('        </ImpuestoAdicional>');
+      lines.push('      </ImpuestosAdicionales>');
     }
 
     lines.push(`      <MontoTotal>${this.r2(total)}</MontoTotal>`);
@@ -121,8 +139,11 @@ export class EcfXmlService {
       }
       lines.push(`      <NombreItem>${this.esc(linea.descripcion)}</NombreItem>`);
       // IndicadorBienoServicio: 1 = Bien, 2 = Servicio
-      lines.push('      <IndicadorBienoServicio>1</IndicadorBienoServicio>');
+      lines.push(`      <IndicadorBienoServicio>${linea.indicadorBienoServicio ?? 1}</IndicadorBienoServicio>`);
       lines.push(`      <CantidadItem>${Number(linea.cantidad).toFixed(2)}</CantidadItem>`);
+      if (linea.unidadMedida) {
+        lines.push(`      <UnidadMedida>${linea.unidadMedida}</UnidadMedida>`);
+      }
       lines.push(`      <PrecioUnitarioItem>${Number(linea.precioUnitario).toFixed(4)}</PrecioUnitarioItem>`);
       if (descuento > 0) {
         lines.push(`      <DescuentoMonto>${this.r2(descuento)}</DescuentoMonto>`);

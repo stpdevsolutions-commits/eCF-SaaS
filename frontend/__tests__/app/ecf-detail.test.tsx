@@ -58,12 +58,17 @@ const baseEcf: Ecf = {
   montoITBIS: 180,
   montoItbisRetenido: 0,
   montoRentaRetenido: 0,
+  tipoPago: 1,
+  tipoIngresos: '01',
+  aplicaPropinaLegal: false,
+  montoPropinaLegal: 0,
   moneda: 'RD',
   lineas: [
     {
       id: 'linea-1',
       numero: 1,
       descripcion: 'Servicio de consultoría',
+      indicadorBienoServicio: 2,
       cantidad: 1,
       precioUnitario: 1000,
       descuentoLinea: 0,

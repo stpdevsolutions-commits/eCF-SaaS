@@ -47,11 +47,54 @@ export class Ecf {
   @Column({ type: 'varchar', length: 255 })
   nombreEmisor!: string;
 
+  /** Copia de Empresa.direccion al momento de crear el e-CF (snapshot, igual que rncEmisor/nombreEmisor). */
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  direccionEmisor?: string;
+
+  // TipoPago: 1=Contado, 2=Crédito, 3=Gratuito (XSD TipoPagoType)
+  @Column({ type: 'int', default: 1 })
+  tipoPago!: number;
+
+  // TipoIngresos: 01-06 (XSD TipoIngresosValidationType)
+  @Column({ type: 'varchar', length: 2, default: '01' })
+  tipoIngresos!: string;
+
+  @Column({ type: 'varchar', length: 15, nullable: true })
+  terminoPago?: string;
+
   @Column({ type: 'varchar', length: 20 })
   rncComprador!: string;
 
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  idExtranjeroComprador?: string;
+
   @Column({ type: 'varchar', length: 255 })
   nombreComprador!: string;
+
+  @Column({ type: 'varchar', length: 50, nullable: true })
+  telefonoComprador?: string;
+
+  @Column({ type: 'varchar', length: 320, nullable: true })
+  correoComprador?: string;
+
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  direccionComprador?: string;
+
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  provinciaComprador?: string;
+
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  municipioComprador?: string;
+
+  @Column({ type: 'varchar', length: 150, nullable: true })
+  comentarioComprador?: string;
+
+  // Propina Legal (10%, impuesto adicional código 001) a nivel de todo el comprobante
+  @Column({ type: 'boolean', default: false })
+  aplicaPropinaLegal!: boolean;
+
+  @Column({ type: 'numeric', precision: 12, scale: 2, default: 0 })
+  montoPropinaLegal!: number;
 
   @Column({
     type: 'enum',

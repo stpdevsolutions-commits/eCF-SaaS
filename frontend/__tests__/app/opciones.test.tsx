@@ -232,6 +232,7 @@ describe('OpcionesPage — admin', () => {
       razonSocial: 'Mi Empresa SRL',
       nombreComercial: 'Mi Empresa',
       direccion: 'Calle 1',
+      logoBase64: '',
       telefono: '809-555-9999',
     });
   });

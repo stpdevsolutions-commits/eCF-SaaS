@@ -6,6 +6,7 @@ import { EcfService } from './ecf.service';
 import { Ecf } from '../entities/ecf.entity';
 import { LineaEcf } from '../entities/linea-ecf.entity';
 import { User } from '../../auth/entities/user.entity';
+import { Empresa } from '../../empresa/entities/empresa.entity';
 import { XsdValidatorService } from '../../validation/xsd-validator.service';
 import { EcfXmlService } from './ecf-xml.service';
 import { EcfSigningService } from './ecf-signing.service';
@@ -27,6 +28,7 @@ describe('EcfService', () => {
   let mockEcfRepository: any;
   let mockLineaRepository: any;
   let mockUserRepository: any;
+  let mockEmpresaRepository: any;
   let mockValidatorService: any;
   let mockXmlService: any;
   let mockSigningService: any;
@@ -50,6 +52,15 @@ describe('EcfService', () => {
 
     mockUserRepository = {
       findOne: jest.fn(),
+    };
+
+    mockEmpresaRepository = {
+      findOne: jest.fn().mockResolvedValue({
+        id: 'empresa-id',
+        rnc: '132943058',
+        razonSocial: 'Empresa Emisora',
+        direccion: 'Calle Falsa 123',
+      }),
     };
 
     mockDgiiService = {
@@ -114,6 +125,10 @@ describe('EcfService', () => {
         {
           provide: getRepositoryToken(User),
           useValue: mockUserRepository,
+        },
+        {
+          provide: getRepositoryToken(Empresa),
+          useValue: mockEmpresaRepository,
         },
         {
           provide: XsdValidatorService,
@@ -202,6 +217,8 @@ describe('EcfService', () => {
         expect.objectContaining({
           empresaId: 'empresa-id',
           usuario: { id: 'user-id' },
+          rncEmisor: '132943058',
+          nombreEmisor: 'Empresa Emisora',
         }),
       );
     });

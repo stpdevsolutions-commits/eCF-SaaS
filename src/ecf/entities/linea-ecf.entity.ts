@@ -18,6 +18,14 @@ export class LineaEcf {
   @Column({ type: 'varchar', length: 255 })
   descripcion!: string;
 
+  // IndicadorBienoServicio: 1 = Bien, 2 = Servicio (XSD IndicadorBienoServicioType)
+  @Column({ type: 'int', default: 1 })
+  indicadorBienoServicio!: number;
+
+  // UnidadMedida: código 1-54 (XSD UnidadMedidaType), ej. 43 = Unidad
+  @Column({ type: 'int', nullable: true })
+  unidadMedida?: number;
+
   @Column({ type: 'int' })
   cantidad!: number;
 

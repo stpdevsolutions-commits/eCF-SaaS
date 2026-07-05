@@ -2,10 +2,19 @@
 
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import Link from 'next/link';
 import QRCode from 'qrcode';
 import AuthGuard from '@/components/AuthGuard';
 import Navbar from '@/components/Navbar';
-import { getEcf, validateEcf, signEcf, transmitEcf, checkEcfStatus, cancelEcf } from '@/lib/api';
+import {
+  getEcf,
+  validateEcf,
+  signEcf,
+  transmitEcf,
+  checkEcfStatus,
+  cancelEcf,
+  descargarXmlEcf,
+} from '@/lib/api';
 import { Ecf, EstadoEcf } from '@/lib/types';
 
 // ── Estado badge (shared config) ─────────────────────────────────────────────
@@ -80,6 +89,7 @@ function EcfDetailContent() {
   const [showCancelForm, setShowCancelForm] = useState(false);
   const [motivoCancelacion, setMotivoCancelacion] = useState('');
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+  const [descargandoXml, setDescargandoXml] = useState(false);
 
   useEffect(() => {
     loadEcf();
@@ -225,6 +235,20 @@ function EcfDetailContent() {
   const canCheckStatus = ecf && ['transmitted', 'accepted', 'rejected'].includes(ecf.estado);
   const canCancel = ecf && !!ecf.uuid && ecf.estado !== 'cancelled';
 
+  async function handleDescargarXml() {
+    setDescargandoXml(true);
+    try {
+      await descargarXmlEcf(id);
+    } catch (err: unknown) {
+      setActionMsg({
+        type: 'error',
+        text: err instanceof Error ? err.message : 'Error al descargar XML',
+      });
+    } finally {
+      setDescargandoXml(false);
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       <Navbar />
@@ -269,6 +293,16 @@ function EcfDetailContent() {
 
                 {/* Actions */}
                 <div className="flex items-center gap-2">
+                  <Link href={`/ecf/${ecf.id}/imprimir`} className="btn-secondary text-sm">
+                    🖨️ Imprimir
+                  </Link>
+                  <button
+                    onClick={handleDescargarXml}
+                    disabled={descargandoXml}
+                    className="btn-secondary text-sm"
+                  >
+                    {descargandoXml ? 'Descargando…' : '⬇ Descargar XML'}
+                  </button>
                   {canValidate && (
                     <button
                       onClick={handleValidate}
