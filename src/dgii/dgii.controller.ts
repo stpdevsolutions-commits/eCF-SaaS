@@ -1,12 +1,4 @@
-import {
-  Controller,
-  Post,
-  Get,
-  Body,
-  Param,
-  Request,
-  UseGuards,
-} from '@nestjs/common';
+import { Controller, Post, Body, Request, UseGuards } from '@nestjs/common';
 import {
   ApiTags,
   ApiBearerAuth,
@@ -15,9 +7,14 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { DgiiService } from './dgii.service';
-import { User } from '../auth/entities/user.entity';
+import { Empresa } from '../empresa/entities/empresa.entity';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 
+// Nota: consultar estado y cancelar un e-CF en la DGII se hace vía
+// GET/POST /ecf/:id/status y /ecf/:id/cancel (ecf.controller.ts), que
+// resuelven el token DGII de la empresa del usuario autenticado y
+// verifican que el e-CF le pertenezca. No se duplica aquí para evitar un
+// endpoint sin ese scoping.
 @ApiTags('Integración DGII')
 @Controller('dgii')
 @UseGuards(JwtAuthGuard)
@@ -25,12 +22,12 @@ import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 export class DgiiController {
   constructor(
     private dgiiService: DgiiService,
-    @InjectRepository(User)
-    private userRepository: Repository<User>,
+    @InjectRepository(Empresa)
+    private empresaRepository: Repository<Empresa>,
   ) {}
 
   @Post('authenticate')
-  @ApiOperation({ summary: 'Autenticar con DGII y guardar el token en la cuenta' })
+  @ApiOperation({ summary: 'Autenticar con DGII y guardar el token en la empresa' })
   async authenticate(
     @Body() body: { rncEmisor: string; usuario: string; clave: string },
     @Request() req: any,
@@ -41,29 +38,11 @@ export class DgiiController {
       body.clave,
     );
 
-    await this.userRepository.update(req.user.id, {
+    await this.empresaRepository.update(req.user.empresaId, {
       tokenDgii: resultado.token,
       certificadoDgii: true,
     });
 
     return resultado;
-  }
-
-  @Get('status/:uuid')
-  @ApiOperation({ summary: 'Consultar estado en DGII' })
-  async getStatus(
-    @Param('uuid') uuid: string,
-    @Body() body: { token: string },
-  ) {
-    return await this.dgiiService.queryEcfStatus(uuid, body.token);
-  }
-
-  @Post('cancel/:uuid')
-  @ApiOperation({ summary: 'Cancelar comprobante en DGII' })
-  async cancel(
-    @Param('uuid') uuid: string,
-    @Body() body: { motivo: string; token: string },
-  ) {
-    return await this.dgiiService.cancelEcf(uuid, body.motivo, body.token);
   }
 }

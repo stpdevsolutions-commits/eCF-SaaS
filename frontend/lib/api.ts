@@ -7,6 +7,7 @@ import {
   ResumenReporte,
   SecuenciaEncf,
   SessionUser,
+  UpdateEcfDto,
   UpdateEmpresaDto,
   UsuarioEmpresa,
 } from './types';
@@ -177,13 +178,23 @@ export async function deactivateUsuarioEmpresa(
 
 // ── ECF ──────────────────────────────────────────────────────────────────────
 
-export async function listEcf(filters?: {
+export interface EcfFiltros {
   estado?: string;
   rncComprador?: string;
-}): Promise<Ecf[]> {
+  tipoEcf?: string;
+  encf?: string;
+  fechaDesde?: string;
+  fechaHasta?: string;
+}
+
+export async function listEcf(filters?: EcfFiltros): Promise<Ecf[]> {
   const params = new URLSearchParams();
   if (filters?.estado) params.set('estado', filters.estado);
   if (filters?.rncComprador) params.set('rncComprador', filters.rncComprador);
+  if (filters?.tipoEcf) params.set('tipoEcf', filters.tipoEcf);
+  if (filters?.encf) params.set('encf', filters.encf);
+  if (filters?.fechaDesde) params.set('fechaDesde', filters.fechaDesde);
+  if (filters?.fechaHasta) params.set('fechaHasta', filters.fechaHasta);
 
   const qs = params.toString() ? `?${params.toString()}` : '';
   const res = await fetch(`${API_URL}/api/ecf${qs}`, {
@@ -206,6 +217,32 @@ export async function createEcf(dto: CreateEcfDto): Promise<Ecf> {
     body: JSON.stringify(dto),
   });
   return handleResponse<Ecf>(res);
+}
+
+export async function updateEcf(id: string, dto: UpdateEcfDto): Promise<Ecf> {
+  const res = await fetch(`${API_URL}/api/ecf/${id}`, {
+    method: 'PUT',
+    headers: authHeaders(),
+    body: JSON.stringify(dto),
+  });
+  return handleResponse<Ecf>(res);
+}
+
+export async function descargarXmlEcf(id: string): Promise<void> {
+  const res = await fetch(`${API_URL}/api/ecf/${id}/xml`, {
+    headers: authHeaders(),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.message ?? `Error ${res.status}`);
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${id}.xml`;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 export async function validateEcf(id: string): Promise<{ estado: string; valid: boolean; errors?: string[] }> {

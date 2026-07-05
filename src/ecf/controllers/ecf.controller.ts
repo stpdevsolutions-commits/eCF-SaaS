@@ -40,14 +40,26 @@ export class EcfController {
   @ApiOperation({ summary: 'Listar comprobantes fiscales' })
   @ApiQuery({ name: 'estado', required: false })
   @ApiQuery({ name: 'rncComprador', required: false })
+  @ApiQuery({ name: 'tipoEcf', required: false })
+  @ApiQuery({ name: 'encf', required: false, description: 'Búsqueda parcial del eNCF' })
+  @ApiQuery({ name: 'fechaDesde', required: false, description: 'Fecha ISO (inclusive)' })
+  @ApiQuery({ name: 'fechaHasta', required: false, description: 'Fecha ISO (inclusive)' })
   async findAll(
     @Request() req: any,
     @Query('estado') estado?: string,
     @Query('rncComprador') rncComprador?: string,
+    @Query('tipoEcf') tipoEcf?: string,
+    @Query('encf') encf?: string,
+    @Query('fechaDesde') fechaDesde?: string,
+    @Query('fechaHasta') fechaHasta?: string,
   ) {
     return await this.ecfService.findAll(req.user.empresaId, {
       estado,
       rncComprador,
+      tipoEcf,
+      encf,
+      fechaDesde,
+      fechaHasta,
     });
   }
 
@@ -89,6 +101,18 @@ export class EcfController {
     return await this.ecfService.findOne(id, req.user.empresaId);
   }
 
+  @Get(':id/xml')
+  @ApiOperation({ summary: 'Descargar el XML disponible más reciente (firmado o validado)' })
+  async getXml(@Param('id') id: string, @Request() req: any, @Res() res: Response) {
+    const { xml, firmado } = await this.ecfService.getXml(id, req.user.empresaId);
+    res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${id}${firmado ? '-firmado' : '-validado'}.xml"`,
+    );
+    res.send(xml);
+  }
+
   @Put(':id')
   @ApiOperation({ summary: 'Actualizar comprobante' })
   async update(
@@ -120,13 +144,13 @@ export class EcfController {
   @Post(':id/transmit')
   @ApiOperation({ summary: 'Transmitir comprobante firmado a la DGII' })
   async transmit(@Param('id') id: string, @Request() req: any) {
-    return await this.ecfService.transmitEcf(id, req.user.empresaId, req.user.id);
+    return await this.ecfService.transmitEcf(id, req.user.empresaId);
   }
 
   @Get(':id/status')
   @ApiOperation({ summary: 'Consultar estado del comprobante en la DGII' })
   async status(@Param('id') id: string, @Request() req: any) {
-    return await this.ecfService.checkStatus(id, req.user.empresaId, req.user.id);
+    return await this.ecfService.checkStatus(id, req.user.empresaId);
   }
 
   @Post(':id/cancel')
@@ -136,11 +160,6 @@ export class EcfController {
     @Body() body: { motivo: string },
     @Request() req: any,
   ) {
-    return await this.ecfService.cancelEcf(
-      id,
-      req.user.empresaId,
-      req.user.id,
-      body.motivo,
-    );
+    return await this.ecfService.cancelEcf(id, req.user.empresaId, body.motivo);
   }
 }

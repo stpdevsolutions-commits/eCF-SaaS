@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsNotEmpty, MaxLength } from 'class-validator';
+import { IsString, IsOptional, IsNotEmpty, MaxLength, Matches } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
 /**
@@ -30,4 +30,13 @@ export class UpdateEmpresaDto {
   @IsString()
   @MaxLength(50)
   telefono?: string;
+
+  @ApiPropertyOptional({ description: 'Logo de la empresa, como data URL en base64 (PNG/JPEG/SVG)' })
+  @IsOptional()
+  @IsString()
+  @Matches(/^data:image\/(png|jpe?g|svg\+xml|webp);base64,/, {
+    message: 'logoBase64 debe ser una data URL de imagen válida (png/jpeg/svg/webp en base64)',
+  })
+  @MaxLength(5_000_000)
+  logoBase64?: string;
 }

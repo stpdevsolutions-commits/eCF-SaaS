@@ -77,12 +77,6 @@ export class User {
   @Column({ type: 'boolean', default: true })
   activo!: boolean;
 
-  @Column({ type: 'boolean', default: false })
-  certificadoDgii!: boolean;
-
-  @Column({ type: 'varchar', nullable: true })
-  tokenDgii?: string;
-
   @CreateDateColumn()
   createdAt!: Date;
 

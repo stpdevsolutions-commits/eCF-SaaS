@@ -4,7 +4,7 @@ import { DgiiService } from './dgii.service';
 import { DgiiCertificateService } from './dgii-certificate.service';
 import { DgiiController } from './dgii.controller';
 import { Ecf } from '../ecf/entities/ecf.entity';
-import { User } from '../auth/entities/user.entity';
+import { Empresa } from '../empresa/entities/empresa.entity';
 import { EcfAnulacionService } from '../ecf/services/ecf-anulacion.service';
 import { EcfSigningService } from '../ecf/services/ecf-signing.service';
 
@@ -13,7 +13,7 @@ import { EcfSigningService } from '../ecf/services/ecf-signing.service';
 // propia caché de certificado/firma— para que DgiiService pueda firmar el
 // ANECF sin crear una dependencia circular EcfModule <-> DgiiModule.
 @Module({
-  imports: [TypeOrmModule.forFeature([Ecf, User])],
+  imports: [TypeOrmModule.forFeature([Ecf, Empresa])],
   controllers: [DgiiController],
   providers: [DgiiService, DgiiCertificateService, EcfAnulacionService, EcfSigningService],
   exports: [DgiiService, DgiiCertificateService],

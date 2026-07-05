@@ -58,8 +58,8 @@ function DgiiContent() {
             )}
             {exito && (
               <div className="p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-700">
-                Conectado con la DGII. El token quedó guardado en tu cuenta (expira en{' '}
-                {Math.round(exito.expiresIn / 60)} minutos).
+                Conectado con la DGII. El token quedó guardado para toda tu empresa (expira
+                en {Math.round(exito.expiresIn / 60)} minutos).
               </div>
             )}
 

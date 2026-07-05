@@ -165,11 +165,13 @@ export class XsdValidatorService {
     }
 
     // ── 4. Formato FechaHoraFirma ─────────────────────────────────────────────
+    // Formato exigido por el XSD real de la DGII (DateTimeValidationType):
+    // DD-MM-YYYY HH:MM:SS — no ISO 8601 (confirmado contra TesteCF real).
     const fechaHoraMatch = xml.match(
-      /<FechaHoraFirma>(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})<\/FechaHoraFirma>/,
+      /<FechaHoraFirma>(\d{2}-\d{2}-\d{4} \d{2}:\d{2}:\d{2})<\/FechaHoraFirma>/,
     );
     if (!fechaHoraMatch && xml.includes('<FechaHoraFirma>')) {
-      errors.push('FechaHoraFirma debe tener formato YYYY-MM-DDTHH:MM:SS (ISO 8601 sin zona)');
+      errors.push('FechaHoraFirma debe tener formato DD-MM-YYYY HH:MM:SS');
     }
 
     // ── 5. RNC Emisor ─────────────────────────────────────────────────────────
@@ -234,9 +236,10 @@ export class XsdValidatorService {
     cantidad: number,
     precioUnitario: number,
     descuento = 0,
+    tasaItbis = 0.18,
   ): { subtotal: number; itbis: number; total: number } {
     const subtotal = cantidad * precioUnitario - descuento;
-    const itbis = this.calculateITBIS(subtotal);
+    const itbis = this.calculateITBIS(subtotal, tasaItbis);
     const total = subtotal + itbis;
     return { subtotal, itbis, total };
   }

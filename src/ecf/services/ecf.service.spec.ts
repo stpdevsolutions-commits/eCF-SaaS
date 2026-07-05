@@ -5,7 +5,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { EcfService } from './ecf.service';
 import { Ecf } from '../entities/ecf.entity';
 import { LineaEcf } from '../entities/linea-ecf.entity';
-import { User } from '../../auth/entities/user.entity';
+import { Empresa } from '../../empresa/entities/empresa.entity';
 import { XsdValidatorService } from '../../validation/xsd-validator.service';
 import { EcfXmlService } from './ecf-xml.service';
 import { EcfSigningService } from './ecf-signing.service';
@@ -26,7 +26,7 @@ describe('EcfService', () => {
   let service: EcfService;
   let mockEcfRepository: any;
   let mockLineaRepository: any;
-  let mockUserRepository: any;
+  let mockEmpresaRepository: any;
   let mockValidatorService: any;
   let mockXmlService: any;
   let mockSigningService: any;
@@ -48,8 +48,13 @@ describe('EcfService', () => {
       save: jest.fn(),
     };
 
-    mockUserRepository = {
-      findOne: jest.fn(),
+    mockEmpresaRepository = {
+      findOne: jest.fn().mockResolvedValue({
+        id: 'empresa-id',
+        rnc: '101000001',
+        razonSocial: 'Empresa Emisora',
+        direccion: 'Calle Falsa 123',
+      }),
     };
 
     mockDgiiService = {
@@ -112,8 +117,8 @@ describe('EcfService', () => {
           useValue: mockLineaRepository,
         },
         {
-          provide: getRepositoryToken(User),
-          useValue: mockUserRepository,
+          provide: getRepositoryToken(Empresa),
+          useValue: mockEmpresaRepository,
         },
         {
           provide: XsdValidatorService,
@@ -202,6 +207,8 @@ describe('EcfService', () => {
         expect.objectContaining({
           empresaId: 'empresa-id',
           usuario: { id: 'user-id' },
+          rncEmisor: '101000001',
+          nombreEmisor: 'Empresa Emisora',
         }),
       );
     });
@@ -543,17 +550,17 @@ describe('EcfService', () => {
     it('rechaza si el comprobante no está firmado', async () => {
       mockEcfRepository.findOne.mockResolvedValue({ id: '1', estado: 'draft' });
 
-      await expect(service.transmitEcf('1', 'empresa-id', 'user-id')).rejects.toThrow(
+      await expect(service.transmitEcf('1', 'empresa-id')).rejects.toThrow(
         BadRequestException,
       );
       expect(mockDgiiService.transmitEcf).not.toHaveBeenCalled();
     });
 
-    it('rechaza si el usuario no tiene tokenDgii', async () => {
+    it('rechaza si la empresa no tiene tokenDgii', async () => {
       mockEcfRepository.findOne.mockResolvedValue({ id: '1', estado: 'signed' });
-      mockUserRepository.findOne.mockResolvedValue({ id: 'user-id', tokenDgii: null });
+      mockEmpresaRepository.findOne.mockResolvedValue({ id: 'empresa-id', tokenDgii: null });
 
-      await expect(service.transmitEcf('1', 'empresa-id', 'user-id')).rejects.toThrow(
+      await expect(service.transmitEcf('1', 'empresa-id')).rejects.toThrow(
         BadRequestException,
       );
       expect(mockDgiiService.transmitEcf).not.toHaveBeenCalled();
@@ -562,7 +569,7 @@ describe('EcfService', () => {
     it('transmite y actualiza uuid/código/estado cuando todo es válido', async () => {
       const mockEcf = { id: '1', estado: 'signed', xmlFirmado: '<ECF/>' };
       mockEcfRepository.findOne.mockResolvedValue(mockEcf);
-      mockUserRepository.findOne.mockResolvedValue({ id: 'user-id', tokenDgii: 'tok-123' });
+      mockEmpresaRepository.findOne.mockResolvedValue({ id: 'empresa-id', tokenDgii: 'tok-123' });
       mockDgiiService.transmitEcf.mockResolvedValue({
         uuid: 'uuid-abc',
         codigo: '200',
@@ -570,7 +577,7 @@ describe('EcfService', () => {
       });
       mockEcfRepository.save.mockImplementation((data: any) => Promise.resolve(data));
 
-      const result = await service.transmitEcf('1', 'empresa-id', 'user-id');
+      const result = await service.transmitEcf('1', 'empresa-id');
 
       expect(mockDgiiService.transmitEcf).toHaveBeenCalledWith(mockEcf, 'tok-123');
       expect(result).toEqual({
@@ -587,17 +594,17 @@ describe('EcfService', () => {
     it('rechaza si el comprobante no tiene uuid (no transmitido)', async () => {
       mockEcfRepository.findOne.mockResolvedValue({ id: '1', estado: 'signed', uuid: null });
 
-      await expect(service.checkStatus('1', 'empresa-id', 'user-id')).rejects.toThrow(
+      await expect(service.checkStatus('1', 'empresa-id')).rejects.toThrow(
         BadRequestException,
       );
       expect(mockDgiiService.queryEcfStatus).not.toHaveBeenCalled();
     });
 
-    it('rechaza si el usuario no tiene tokenDgii', async () => {
+    it('rechaza si la empresa no tiene tokenDgii', async () => {
       mockEcfRepository.findOne.mockResolvedValue({ id: '1', estado: 'transmitted', uuid: 'uuid-abc' });
-      mockUserRepository.findOne.mockResolvedValue({ id: 'user-id', tokenDgii: null });
+      mockEmpresaRepository.findOne.mockResolvedValue({ id: 'empresa-id', tokenDgii: null });
 
-      await expect(service.checkStatus('1', 'empresa-id', 'user-id')).rejects.toThrow(
+      await expect(service.checkStatus('1', 'empresa-id')).rejects.toThrow(
         BadRequestException,
       );
     });
@@ -605,7 +612,7 @@ describe('EcfService', () => {
     it('actualiza el estado local a accepted cuando la DGII responde Aceptado', async () => {
       const mockEcf = { id: '1', estado: 'transmitted', uuid: 'uuid-abc' };
       mockEcfRepository.findOne.mockResolvedValue(mockEcf);
-      mockUserRepository.findOne.mockResolvedValue({ id: 'user-id', tokenDgii: 'tok-123' });
+      mockEmpresaRepository.findOne.mockResolvedValue({ id: 'empresa-id', tokenDgii: 'tok-123' });
       mockDgiiService.queryEcfStatus.mockResolvedValue({
         uuid: 'uuid-abc',
         estado: 'Aceptado',
@@ -614,7 +621,7 @@ describe('EcfService', () => {
       });
       mockEcfRepository.save.mockImplementation((data: any) => Promise.resolve(data));
 
-      const result = await service.checkStatus('1', 'empresa-id', 'user-id');
+      const result = await service.checkStatus('1', 'empresa-id');
 
       expect(mockDgiiService.queryEcfStatus).toHaveBeenCalledWith('uuid-abc', 'tok-123');
       expect(result.estado).toBe('accepted');
@@ -624,7 +631,7 @@ describe('EcfService', () => {
     it('no cambia el estado local si la DGII devuelve un estado no reconocido', async () => {
       const mockEcf = { id: '1', estado: 'transmitted', uuid: 'uuid-abc' };
       mockEcfRepository.findOne.mockResolvedValue(mockEcf);
-      mockUserRepository.findOne.mockResolvedValue({ id: 'user-id', tokenDgii: 'tok-123' });
+      mockEmpresaRepository.findOne.mockResolvedValue({ id: 'empresa-id', tokenDgii: 'tok-123' });
       mockDgiiService.queryEcfStatus.mockResolvedValue({
         uuid: 'uuid-abc',
         estado: 'EnProceso',
@@ -632,7 +639,7 @@ describe('EcfService', () => {
         mensaje: 'En proceso de validación',
       });
 
-      const result = await service.checkStatus('1', 'empresa-id', 'user-id');
+      const result = await service.checkStatus('1', 'empresa-id');
 
       expect(result.estado).toBe('transmitted');
       expect(mockEcfRepository.save).not.toHaveBeenCalled();
@@ -644,7 +651,7 @@ describe('EcfService', () => {
       mockEcfRepository.findOne.mockResolvedValue({ id: '1', estado: 'signed', uuid: null });
 
       await expect(
-        service.cancelEcf('1', 'empresa-id', 'user-id', 'motivo'),
+        service.cancelEcf('1', 'empresa-id', 'motivo'),
       ).rejects.toThrow(BadRequestException);
       expect(mockDgiiService.cancelEcf).not.toHaveBeenCalled();
     });
@@ -657,7 +664,7 @@ describe('EcfService', () => {
       });
 
       await expect(
-        service.cancelEcf('1', 'empresa-id', 'user-id', 'motivo'),
+        service.cancelEcf('1', 'empresa-id', 'motivo'),
       ).rejects.toThrow(BadRequestException);
     });
 
@@ -666,12 +673,12 @@ describe('EcfService', () => {
         id: '1',
         estado: 'transmitted',
         uuid: 'uuid-abc',
-        rncEmisor: '132943058',
+        rncEmisor: '101000001',
         tipoEcf: 'e-CF_31_v_1_0',
         encf: 'E310000000007',
       };
       mockEcfRepository.findOne.mockResolvedValue(mockEcf);
-      mockUserRepository.findOne.mockResolvedValue({ id: 'user-id', tokenDgii: 'tok-123' });
+      mockEmpresaRepository.findOne.mockResolvedValue({ id: 'empresa-id', tokenDgii: 'tok-123' });
       mockDgiiService.cancelEcf.mockResolvedValue({
         uuid: 'uuid-abc',
         estado: 'Cancelado',
@@ -680,18 +687,13 @@ describe('EcfService', () => {
       });
       mockEcfRepository.save.mockImplementation((data: any) => Promise.resolve(data));
 
-      const result = await service.cancelEcf(
-        '1',
-        'empresa-id',
-        'user-id',
-        'Error en el monto',
-      );
+      const result = await service.cancelEcf('1', 'empresa-id', 'Error en el monto');
 
       expect(mockDgiiService.cancelEcf).toHaveBeenCalledWith(
         'uuid-abc',
         'Error en el monto',
         'tok-123',
-        { rncEmisor: '132943058', tipoEcf: 31, encf: 'E310000000007' },
+        { rncEmisor: '101000001', tipoEcf: 31, encf: 'E310000000007' },
       );
       expect(result).toEqual({
         id: '1',
@@ -701,9 +703,9 @@ describe('EcfService', () => {
     });
 
     it('anula sin datos de rango (undefined) si el e-CF no tiene tipoEcf/encf reconocibles', async () => {
-      const mockEcf = { id: '1', estado: 'transmitted', uuid: 'uuid-abc', rncEmisor: '132943058' };
+      const mockEcf = { id: '1', estado: 'transmitted', uuid: 'uuid-abc', rncEmisor: '101000001' };
       mockEcfRepository.findOne.mockResolvedValue(mockEcf);
-      mockUserRepository.findOne.mockResolvedValue({ id: 'user-id', tokenDgii: 'tok-123' });
+      mockEmpresaRepository.findOne.mockResolvedValue({ id: 'empresa-id', tokenDgii: 'tok-123' });
       mockDgiiService.cancelEcf.mockResolvedValue({
         uuid: 'uuid-abc',
         estado: 'Cancelado',
@@ -712,7 +714,7 @@ describe('EcfService', () => {
       });
       mockEcfRepository.save.mockImplementation((data: any) => Promise.resolve(data));
 
-      await service.cancelEcf('1', 'empresa-id', 'user-id', 'Error en el monto');
+      await service.cancelEcf('1', 'empresa-id', 'Error en el monto');
 
       expect(mockDgiiService.cancelEcf).toHaveBeenCalledWith(
         'uuid-abc',

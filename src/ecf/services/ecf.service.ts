@@ -16,8 +16,8 @@ import {
 } from 'dgii-ecf';
 import { Ecf } from '../entities/ecf.entity';
 import { LineaEcf } from '../entities/linea-ecf.entity';
-import { User } from '../../auth/entities/user.entity';
-import { CreateEcfDto } from '../dto/create-ecf.dto';
+import { Empresa } from '../../empresa/entities/empresa.entity';
+import { CreateEcfDto, CreateLineaEcfDto } from '../dto/create-ecf.dto';
 import { UpdateEcfDto } from '../dto/update-ecf.dto';
 import { XsdValidatorService } from '../../validation/xsd-validator.service';
 import { EcfXmlService, TIPO_ECF_MAP } from './ecf-xml.service';
@@ -34,8 +34,8 @@ export class EcfService {
     private ecfRepository: Repository<Ecf>,
     @InjectRepository(LineaEcf)
     private lineaRepository: Repository<LineaEcf>,
-    @InjectRepository(User)
-    private userRepository: Repository<User>,
+    @InjectRepository(Empresa)
+    private empresaRepository: Repository<Empresa>,
     private validatorService: XsdValidatorService,
     private xmlService: EcfXmlService,
     private signingService: EcfSigningService,
@@ -45,26 +45,31 @@ export class EcfService {
   ) {}
 
   /**
-   * Crea un e-CF a nombre de la empresa (scoping) registrando además el
-   * usuario que lo creó (`usuario_id` = "creado por").
+   * Calcula líneas + totales (incluida la Propina Legal opcional) a partir
+   * del DTO. Compartido entre create() y update() para no duplicar la lógica.
    */
-  async create(dto: CreateEcfDto, usuarioId: string, empresaId: string) {
-    const validation = this.validatorService.validateEcf(dto as any);
+  /** IndicadorFacturacion (XSD) -> tasa de ITBIS aplicada a la línea. */
+  private static readonly TASA_POR_INDICADOR: Record<number, number> = {
+    1: 0.18, // ITBIS 1 (18%)
+    2: 0.16, // ITBIS 2 (16%)
+    3: 0, // ITBIS 3 (0%)
+    4: 0, // Exento
+  };
 
-    if (!validation.valid) {
-      throw new BadRequestException(`Validación fallida: ${validation.errors.join(', ')}`);
-    }
-
+  private calcularLineasYTotales(lineasDto: CreateLineaEcfDto[], aplicaPropinaLegal: boolean) {
     let montoTotal = 0;
     let montoITBIS = 0;
     let montoItbisRetenido = 0;
     let montoRentaRetenido = 0;
 
-    const lineas = dto.lineas.map((linea, index) => {
+    const lineas = lineasDto.map((linea, index) => {
+      const indicadorFacturacion = linea.indicadorFacturacion ?? 1;
+      const tasaItbis = EcfService.TASA_POR_INDICADOR[indicadorFacturacion] ?? 0.18;
       const { subtotal, itbis, total } = this.validatorService.calculateLineTotal(
         linea.cantidad,
         linea.precioUnitario,
         linea.descuentoLinea || 0,
+        tasaItbis,
       );
 
       montoTotal += total;
@@ -75,24 +80,75 @@ export class EcfService {
       return {
         numero: index + 1,
         ...linea,
+        indicadorBienoServicio: linea.indicadorBienoServicio ?? 1,
+        indicadorFacturacion,
         subtotal,
         itbis,
       };
     });
 
+    // Propina Legal (10%, impuesto adicional código 001): se calcula sobre el
+    // subtotal gravado (antes de ITBIS) de todas las líneas y se suma al total.
+    let montoPropinaLegal = 0;
+    if (aplicaPropinaLegal) {
+      const subtotalGravado = montoTotal - montoITBIS;
+      montoPropinaLegal = Math.round(subtotalGravado * 0.1 * 100) / 100;
+      montoTotal += montoPropinaLegal;
+    }
+
+    return { lineas, montoTotal, montoITBIS, montoItbisRetenido, montoRentaRetenido, montoPropinaLegal };
+  }
+
+  /**
+   * Crea un e-CF a nombre de la empresa (scoping) registrando además el
+   * usuario que lo creó (`usuario_id` = "creado por"). Los datos del emisor
+   * (RNC, razón social, dirección) se toman de la Empresa, no del DTO.
+   */
+  async create(dto: CreateEcfDto, usuarioId: string, empresaId: string) {
+    const empresa = await this.empresaRepository.findOne({ where: { id: empresaId } });
+    if (!empresa) {
+      throw new NotFoundException('Empresa no encontrada');
+    }
+
+    const validation = this.validatorService.validateEcf({
+      ...dto,
+      rncEmisor: empresa.rnc,
+      nombreEmisor: empresa.razonSocial,
+    });
+
+    if (!validation.valid) {
+      throw new BadRequestException(`Validación fallida: ${validation.errors.join(', ')}`);
+    }
+
+    const { lineas, montoTotal, montoITBIS, montoItbisRetenido, montoRentaRetenido, montoPropinaLegal } =
+      this.calcularLineasYTotales(dto.lineas, dto.aplicaPropinaLegal ?? false);
+
     const ecf = this.ecfRepository.create({
       tipoEcf: dto.tipoEcf,
       version: 'v1.0',
-      fechaEmision: new Date(),
-      rncEmisor: dto.rncEmisor,
-      nombreEmisor: dto.nombreEmisor,
+      fechaEmision: dto.fechaEmision ? new Date(dto.fechaEmision) : new Date(),
+      rncEmisor: empresa.rnc,
+      nombreEmisor: empresa.razonSocial,
+      direccionEmisor: empresa.direccion,
+      tipoPago: dto.tipoPago ?? 1,
+      tipoIngresos: dto.tipoIngresos ?? '01',
+      terminoPago: dto.terminoPago,
       rncComprador: dto.rncComprador,
+      idExtranjeroComprador: dto.idExtranjeroComprador,
       nombreComprador: dto.nombreComprador,
+      telefonoComprador: dto.telefonoComprador,
+      correoComprador: dto.correoComprador,
+      direccionComprador: dto.direccionComprador,
+      provinciaComprador: dto.provinciaComprador,
+      municipioComprador: dto.municipioComprador,
+      comentarioComprador: dto.comentarioComprador,
       montoTotal,
       montoDescuento: 0,
       montoITBIS,
       montoItbisRetenido,
       montoRentaRetenido,
+      aplicaPropinaLegal: dto.aplicaPropinaLegal ?? false,
+      montoPropinaLegal,
       moneda: dto.moneda || 'RD',
       estado: 'draft',
       usuario: { id: usuarioId } as any,
@@ -112,7 +168,17 @@ export class EcfService {
     return { ...ecfGuardado, lineas };
   }
 
-  async findAll(empresaId: string, filters?: { estado?: string; rncComprador?: string }) {
+  async findAll(
+    empresaId: string,
+    filters?: {
+      estado?: string;
+      rncComprador?: string;
+      tipoEcf?: string;
+      encf?: string;
+      fechaDesde?: string;
+      fechaHasta?: string;
+    },
+  ) {
     let query = this.ecfRepository
       .createQueryBuilder('ecf')
       .where('ecf.empresa_id = :empresaId', { empresaId })
@@ -128,7 +194,39 @@ export class EcfService {
       });
     }
 
+    if (filters?.tipoEcf) {
+      query = query.andWhere('ecf.tipoEcf = :tipoEcf', { tipoEcf: filters.tipoEcf });
+    }
+
+    if (filters?.encf) {
+      query = query.andWhere('ecf.encf ILIKE :encf', { encf: `%${filters.encf}%` });
+    }
+
+    if (filters?.fechaDesde) {
+      query = query.andWhere('ecf.fechaEmision >= :fechaDesde', { fechaDesde: filters.fechaDesde });
+    }
+
+    if (filters?.fechaHasta) {
+      query = query.andWhere('ecf.fechaEmision <= :fechaHasta', { fechaHasta: filters.fechaHasta });
+    }
+
     return await query.orderBy('ecf.createdAt', 'DESC').getMany();
+  }
+
+  /** Devuelve el XML disponible más reciente (firmado si existe, si no el validado). */
+  async getXml(id: string, empresaId: string): Promise<{ xml: string; firmado: boolean }> {
+    const ecf = await this.findOne(id, empresaId);
+
+    if (ecf.xmlFirmado) {
+      return { xml: ecf.xmlFirmado, firmado: true };
+    }
+    if (ecf.xmlValidacion) {
+      return { xml: ecf.xmlValidacion, firmado: false };
+    }
+
+    throw new BadRequestException(
+      'Este comprobante aún no tiene un XML generado — valídalo o fírmalo primero.',
+    );
   }
 
   async findOne(id: string, empresaId: string) {
@@ -151,8 +249,38 @@ export class EcfService {
       throw new UnauthorizedException('Solo se pueden editar comprobantes en borrador');
     }
 
-    Object.assign(ecf, dto);
-    return await this.ecfRepository.save(ecf);
+    const { lineas, ...camposEcf } = dto;
+    Object.assign(ecf, camposEcf);
+
+    if (lineas) {
+      const { lineas: lineasCalculadas, montoTotal, montoITBIS, montoItbisRetenido, montoRentaRetenido, montoPropinaLegal } =
+        this.calcularLineasYTotales(lineas, dto.aplicaPropinaLegal ?? ecf.aplicaPropinaLegal);
+
+      await this.lineaRepository.delete({ ecf: { id: ecf.id } });
+
+      ecf.montoTotal = montoTotal;
+      ecf.montoITBIS = montoITBIS;
+      ecf.montoItbisRetenido = montoItbisRetenido;
+      ecf.montoRentaRetenido = montoRentaRetenido;
+      ecf.montoPropinaLegal = montoPropinaLegal;
+
+      for (const linea of lineasCalculadas) {
+        const lineaEntity = this.lineaRepository.create({ ...linea, ecf });
+        await this.lineaRepository.save(lineaEntity);
+      }
+
+      // `ecf.lineas` todavía tiene el array ANTERIOR (cargado por findOne antes
+      // del delete+create de arriba). Como la relación tiene cascade:true, un
+      // save(ecf) con ese array obsoleto reinsertaría las líneas viejas. Se
+      // limpia para que el cascade no toque linea_ecf (ya lo gestionamos a mano).
+      ecf.lineas = undefined;
+    }
+
+    // El XML validado queda obsoleto tras cualquier edición — se regenera en la próxima validación.
+    ecf.xmlValidacion = undefined;
+
+    const ecfGuardado = await this.ecfRepository.save(ecf);
+    return await this.findOne(ecfGuardado.id, empresaId);
   }
 
   async remove(id: string, empresaId: string) {
@@ -403,21 +531,17 @@ export class EcfService {
 
   // ── Transmisión a la DGII ────────────────────────────────────────────────────
 
-  private async obtenerTokenDgii(usuarioId: string): Promise<string> {
-    const usuario = await this.userRepository.findOne({ where: { id: usuarioId } });
-    if (!usuario?.tokenDgii) {
+  private async obtenerTokenDgii(empresaId: string): Promise<string> {
+    const empresa = await this.empresaRepository.findOne({ where: { id: empresaId } });
+    if (!empresa?.tokenDgii) {
       throw new BadRequestException(
         'Debes autenticarte con la DGII primero (POST /dgii/authenticate)',
       );
     }
-    return usuario.tokenDgii;
+    return empresa.tokenDgii;
   }
 
-  /**
-   * @param empresaId empresa del usuario autenticado (scoping del e-CF)
-   * @param usuarioId usuario autenticado (dueño del token DGII a usar)
-   */
-  async transmitEcf(id: string, empresaId: string, usuarioId: string) {
+  async transmitEcf(id: string, empresaId: string) {
     const ecf = await this.findOne(id, empresaId);
 
     if (ecf.estado !== 'signed') {
@@ -426,7 +550,7 @@ export class EcfService {
       );
     }
 
-    const token = await this.obtenerTokenDgii(usuarioId);
+    const token = await this.obtenerTokenDgii(empresaId);
     const resultado = await this.dgiiService.transmitEcf(ecf, token);
 
     ecf.uuid = resultado.uuid;
@@ -445,7 +569,7 @@ export class EcfService {
 
   // ── Consulta de estado en la DGII ────────────────────────────────────────────
 
-  async checkStatus(id: string, empresaId: string, usuarioId: string) {
+  async checkStatus(id: string, empresaId: string) {
     const ecf = await this.findOne(id, empresaId);
 
     if (!ecf.uuid) {
@@ -454,7 +578,7 @@ export class EcfService {
       );
     }
 
-    const token = await this.obtenerTokenDgii(usuarioId);
+    const token = await this.obtenerTokenDgii(empresaId);
     const resultado = await this.dgiiService.queryEcfStatus(ecf.uuid, token);
 
     const ESTADO_DGII_A_LOCAL: Record<string, string> = {
@@ -478,7 +602,7 @@ export class EcfService {
 
   // ── Cancelación en la DGII ───────────────────────────────────────────────────
 
-  async cancelEcf(id: string, empresaId: string, usuarioId: string, motivo: string) {
+  async cancelEcf(id: string, empresaId: string, motivo: string) {
     const ecf = await this.findOne(id, empresaId);
 
     if (!ecf.uuid) {
@@ -490,7 +614,7 @@ export class EcfService {
       throw new BadRequestException('Este comprobante ya está cancelado');
     }
 
-    const token = await this.obtenerTokenDgii(usuarioId);
+    const token = await this.obtenerTokenDgii(empresaId);
 
     // Datos para construir el ANECF (anulación de rangos) en modo real; en
     // modo mock DgiiService los ignora. ecf.encf siempre debe existir aquí:

@@ -1,5 +1,6 @@
 /**
  * Tests del formulario de nuevo e-CF (/ecf/nueva):
+ * - ya no pide datos del emisor (se toman de la Empresa)
  * - visibilidad de los campos de retención según el tipo (31/33/34 opcional, 41 obligatorio)
  * - agregar/quitar líneas de detalle
  * - validación de retención obligatoria para e-CF 41
@@ -31,14 +32,16 @@ beforeEach(() => {
   localStorage.setItem('ecf_token', 'token-test');
 });
 
+// Orden de los <select> en el formulario: Tipo e-CF, Tipo de Pago, Tipo de
+// Ingreso (encabezado), y por cada línea: Bien/Servicio, Unidad de Medida,
+// Itbis (tasa), [Retención si el tipo la soporta].
 function getTipoSelect(): HTMLSelectElement {
-  // El primer combobox de la página es el selector de tipo de e-CF
   return screen.getAllByRole('combobox')[0] as HTMLSelectElement;
 }
 
-function getRetencionSelect(index = 0): HTMLSelectElement {
-  // Los combobox de retención por línea vienen después del selector de tipo
-  return screen.getAllByRole('combobox')[index + 1] as HTMLSelectElement;
+function getRetencionSelect(): HTMLSelectElement {
+  // Asume una sola línea de detalle (como en estos tests).
+  return screen.getAllByRole('combobox')[6] as HTMLSelectElement;
 }
 
 async function renderPage() {
@@ -47,16 +50,32 @@ async function renderPage() {
   await screen.findByText('Nuevo Comprobante Fiscal');
 }
 
+async function fillComprador(user: ReturnType<typeof userEvent.setup>) {
+  await user.type(screen.getByPlaceholderText('101-98765-4'), '101987654');
+  await user.type(screen.getByPlaceholderText('Empresa Compradora, S.A.'), 'Cliente SA');
+}
+
+describe('NuevaEcfPage — sin datos del emisor', () => {
+  it('no pide RNC ni razón social del emisor (se toman de la Empresa)', async () => {
+    await renderPage();
+
+    expect(screen.queryByText('Datos del Emisor')).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText('101-12345-6')).not.toBeInTheDocument();
+    expect(
+      screen.getByText('Los datos del emisor se toman de tu empresa (Opciones → Empresa).'),
+    ).toBeInTheDocument();
+  });
+});
+
 describe('NuevaEcfPage — campos de retención según tipo', () => {
   it('con el tipo 31 (default) muestra las columnas de retención como opcionales', async () => {
     await renderPage();
 
     expect(getTipoSelect().value).toBe('e-CF_31_v_1_0');
-    expect(screen.getByRole('columnheader', { name: 'Retención' })).toBeInTheDocument();
-    expect(screen.getByRole('columnheader', { name: 'ITBIS Ret.' })).toBeInTheDocument();
-    expect(screen.getByRole('columnheader', { name: 'ISR Ret.' })).toBeInTheDocument();
+    expect(screen.getByText('Retención', { selector: 'label' })).toBeInTheDocument();
+    expect(screen.getByText('ITBIS Retenido (RD$)')).toBeInTheDocument();
+    expect(screen.getByText('ISR Retenido (RD$)')).toBeInTheDocument();
 
-    // Opcional: el select de retención no es required y no hay aviso de obligatoriedad
     expect(getRetencionSelect()).not.toBeRequired();
     expect(
       screen.queryByText(/Este tipo requiere indicar Retención\/Percepción/),
@@ -69,11 +88,9 @@ describe('NuevaEcfPage — campos de retención según tipo', () => {
 
     await user.selectOptions(getTipoSelect(), 'e-CF_32_v_1_0');
 
-    expect(screen.queryByRole('columnheader', { name: /Retención/ })).not.toBeInTheDocument();
-    expect(screen.queryByText('ITBIS Ret.')).not.toBeInTheDocument();
-    expect(screen.queryByText('ISR Ret.')).not.toBeInTheDocument();
-    // Solo queda el combobox del tipo de e-CF
-    expect(screen.getAllByRole('combobox')).toHaveLength(1);
+    expect(screen.queryByText('Retención', { selector: 'label' })).not.toBeInTheDocument();
+    expect(screen.queryByText('ITBIS Retenido (RD$)')).not.toBeInTheDocument();
+    expect(screen.queryByText('ISR Retenido (RD$)')).not.toBeInTheDocument();
   });
 
   it.each(['e-CF_33_v_1_0', 'e-CF_34_v_1_0'])(
@@ -84,7 +101,7 @@ describe('NuevaEcfPage — campos de retención según tipo', () => {
 
       await user.selectOptions(getTipoSelect(), tipo);
 
-      expect(screen.getByRole('columnheader', { name: 'Retención' })).toBeInTheDocument();
+      expect(screen.getByText('Retención', { selector: 'label' })).toBeInTheDocument();
       expect(getRetencionSelect()).not.toBeRequired();
     },
   );
@@ -98,7 +115,7 @@ describe('NuevaEcfPage — campos de retención según tipo', () => {
     expect(
       screen.getByText(/Este tipo requiere indicar Retención\/Percepción en cada línea/),
     ).toBeInTheDocument();
-    expect(screen.getByRole('columnheader', { name: 'Retención *' })).toBeInTheDocument();
+    expect(screen.getByText('Retención *')).toBeInTheDocument();
     expect(getRetencionSelect()).toBeRequired();
   });
 });
@@ -111,7 +128,6 @@ describe('NuevaEcfPage — líneas de detalle', () => {
     const descripcionInputs = () =>
       screen.getAllByPlaceholderText('Descripción del bien o servicio');
 
-    // Estado inicial: 1 línea, sin botón de eliminar
     expect(descripcionInputs()).toHaveLength(1);
     expect(screen.queryByTitle('Eliminar línea')).not.toBeInTheDocument();
 
@@ -119,7 +135,6 @@ describe('NuevaEcfPage — líneas de detalle', () => {
     await user.click(screen.getByRole('button', { name: /Agregar línea/ }));
     expect(descripcionInputs()).toHaveLength(3);
 
-    // Con más de una línea aparecen los botones de eliminar
     const deleteButtons = screen.getAllByTitle('Eliminar línea');
     expect(deleteButtons).toHaveLength(3);
 
@@ -127,26 +142,16 @@ describe('NuevaEcfPage — líneas de detalle', () => {
     await user.click(deleteButtons[0]);
 
     expect(descripcionInputs()).toHaveLength(2);
-    // La línea eliminada fue la primera (su descripción ya no está)
     expect(screen.queryByDisplayValue('Primera línea')).not.toBeInTheDocument();
   });
 });
 
 describe('NuevaEcfPage — submit', () => {
-  async function fillDatosBasicos(user: ReturnType<typeof userEvent.setup>) {
-    await user.type(screen.getByPlaceholderText('101-12345-6'), '101123456');
-    await user.type(screen.getByPlaceholderText('Mi Empresa, S.R.L.'), 'Mi Empresa SRL');
-    await user.type(screen.getByPlaceholderText('101-98765-4'), '101987654');
-    await user.type(screen.getByPlaceholderText('Empresa Compradora, S.A.'), 'Cliente SA');
-  }
-
   it('muestra error si no hay ninguna línea válida y no llama al API', async () => {
     const user = userEvent.setup();
     await renderPage();
-    await fillDatosBasicos(user);
+    await fillComprador(user);
 
-    // Sin descripción ni precio → ninguna línea válida.
-    // fireEvent.submit para saltar la validación HTML5 de los campos required.
     fireEvent.submit(document.querySelector('form') as HTMLFormElement);
 
     expect(
@@ -160,16 +165,14 @@ describe('NuevaEcfPage — submit', () => {
     await renderPage();
 
     await user.selectOptions(getTipoSelect(), 'e-CF_41_v_1_0');
-    await fillDatosBasicos(user);
+    await fillComprador(user);
     await user.type(
       screen.getByPlaceholderText('Descripción del bien o servicio'),
       'Compra a proveedor informal',
     );
-    // spinbuttons por línea: [cantidad, precio, descuento, itbisRet, isrRet]
     const spinbuttons = screen.getAllByRole('spinbutton');
     await user.type(spinbuttons[1], '5000');
 
-    // El select de retención queda en "— Ninguna —"
     fireEvent.submit(document.querySelector('form') as HTMLFormElement);
 
     expect(
@@ -183,13 +186,12 @@ describe('NuevaEcfPage — submit', () => {
     createEcfMock.mockResolvedValueOnce({ id: 'ecf-nuevo-1' });
     await renderPage();
 
-    await fillDatosBasicos(user);
+    await fillComprador(user);
     await user.type(
       screen.getByPlaceholderText('Descripción del bien o servicio'),
       'Servicios de consultoría',
     );
 
-    // spinbuttons: [cantidad, precio, descuento, itbisRet, isrRet]
     const spinbuttons = screen.getAllByRole('spinbutton');
     await user.clear(spinbuttons[0]);
     await user.type(spinbuttons[0], '2');
@@ -203,25 +205,33 @@ describe('NuevaEcfPage — submit', () => {
     await waitFor(() => {
       expect(createEcfMock).toHaveBeenCalledTimes(1);
     });
-    expect(createEcfMock).toHaveBeenCalledWith({
-      tipoEcf: 'e-CF_31_v_1_0',
-      rncEmisor: '101123456',
-      nombreEmisor: 'Mi Empresa SRL',
-      rncComprador: '101987654',
-      nombreComprador: 'Cliente SA',
-      moneda: 'RD',
-      lineas: [
-        {
-          descripcion: 'Servicios de consultoría',
-          cantidad: 2,
-          precioUnitario: 1000,
-          descuentoLinea: 0,
-          indicadorAgenteRetencionoPercepcion: 1,
-          montoItbisRetenido: 180,
-          montoIsrRetenido: 200,
-        },
-      ],
-    });
+    const dto = createEcfMock.mock.calls[0][0];
+    expect(dto).toEqual(
+      expect.objectContaining({
+        tipoEcf: 'e-CF_31_v_1_0',
+        tipoPago: 1,
+        tipoIngresos: '01',
+        rncComprador: '101987654',
+        nombreComprador: 'Cliente SA',
+        moneda: 'RD',
+        aplicaPropinaLegal: false,
+        lineas: [
+          {
+            descripcion: 'Servicios de consultoría',
+            indicadorBienoServicio: 1,
+            unidadMedida: 43,
+            indicadorFacturacion: 1,
+            cantidad: 2,
+            precioUnitario: 1000,
+            descuentoLinea: 0,
+            indicadorAgenteRetencionoPercepcion: 1,
+            montoItbisRetenido: 180,
+            montoIsrRetenido: 200,
+          },
+        ],
+      }),
+    );
+    expect(typeof dto.fechaEmision).toBe('string');
     await waitFor(() => {
       expect(push).toHaveBeenCalledWith('/ecf/ecf-nuevo-1');
     });
@@ -233,12 +243,11 @@ describe('NuevaEcfPage — submit', () => {
     await renderPage();
 
     await user.selectOptions(getTipoSelect(), 'e-CF_32_v_1_0');
-    await fillDatosBasicos(user);
+    await fillComprador(user);
     await user.type(
       screen.getByPlaceholderText('Descripción del bien o servicio'),
       'Venta al consumidor',
     );
-    // Sin retención: spinbuttons = [cantidad, precio, descuento]
     const spinbuttons = screen.getAllByRole('spinbutton');
     await user.type(spinbuttons[1], '350.50');
 
@@ -252,6 +261,9 @@ describe('NuevaEcfPage — submit', () => {
     expect(dto.lineas).toEqual([
       {
         descripcion: 'Venta al consumidor',
+        indicadorBienoServicio: 1,
+        unidadMedida: 43,
+        indicadorFacturacion: 1,
         cantidad: 1,
         precioUnitario: 350.5,
         descuentoLinea: 0,
@@ -261,10 +273,10 @@ describe('NuevaEcfPage — submit', () => {
 
   it('muestra el error del backend si createEcf falla', async () => {
     const user = userEvent.setup();
-    createEcfMock.mockRejectedValueOnce(new Error('RNC del emisor inválido'));
+    createEcfMock.mockRejectedValueOnce(new Error('Datos del comprador inválidos'));
     await renderPage();
 
-    await fillDatosBasicos(user);
+    await fillComprador(user);
     await user.type(
       screen.getByPlaceholderText('Descripción del bien o servicio'),
       'Servicio X',
@@ -274,7 +286,7 @@ describe('NuevaEcfPage — submit', () => {
 
     await user.click(screen.getByRole('button', { name: 'Crear Comprobante' }));
 
-    expect(await screen.findByText('RNC del emisor inválido')).toBeInTheDocument();
+    expect(await screen.findByText('Datos del comprador inválidos')).toBeInTheDocument();
     expect(push).not.toHaveBeenCalled();
   });
 });

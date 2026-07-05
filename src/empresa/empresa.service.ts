@@ -71,6 +71,7 @@ export class EmpresaService {
       empresa.nombreComercial = dto.nombreComercial;
     if (dto.direccion !== undefined) empresa.direccion = dto.direccion;
     if (dto.telefono !== undefined) empresa.telefono = dto.telefono;
+    if (dto.logoBase64 !== undefined) empresa.logoBase64 = dto.logoBase64;
 
     return await this.empresaRepository.save(empresa);
   }
