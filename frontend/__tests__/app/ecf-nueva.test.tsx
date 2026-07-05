@@ -34,14 +34,14 @@ beforeEach(() => {
 
 // Orden de los <select> en el formulario: Tipo e-CF, Tipo de Pago, Tipo de
 // Ingreso (encabezado), y por cada línea: Bien/Servicio, Unidad de Medida,
-// [Retención si el tipo la soporta].
+// Itbis (tasa), [Retención si el tipo la soporta].
 function getTipoSelect(): HTMLSelectElement {
   return screen.getAllByRole('combobox')[0] as HTMLSelectElement;
 }
 
 function getRetencionSelect(): HTMLSelectElement {
   // Asume una sola línea de detalle (como en estos tests).
-  return screen.getAllByRole('combobox')[5] as HTMLSelectElement;
+  return screen.getAllByRole('combobox')[6] as HTMLSelectElement;
 }
 
 async function renderPage() {
@@ -72,9 +72,9 @@ describe('NuevaEcfPage — campos de retención según tipo', () => {
     await renderPage();
 
     expect(getTipoSelect().value).toBe('e-CF_31_v_1_0');
-    expect(screen.getByRole('columnheader', { name: /Retención/ })).toBeInTheDocument();
-    expect(screen.getByRole('columnheader', { name: 'ITBIS Retenido (RD$)' })).toBeInTheDocument();
-    expect(screen.getByRole('columnheader', { name: 'ISR Retenido (RD$)' })).toBeInTheDocument();
+    expect(screen.getByText('Retención', { selector: 'label' })).toBeInTheDocument();
+    expect(screen.getByText('ITBIS Retenido (RD$)')).toBeInTheDocument();
+    expect(screen.getByText('ISR Retenido (RD$)')).toBeInTheDocument();
 
     expect(getRetencionSelect()).not.toBeRequired();
     expect(
@@ -88,7 +88,7 @@ describe('NuevaEcfPage — campos de retención según tipo', () => {
 
     await user.selectOptions(getTipoSelect(), 'e-CF_32_v_1_0');
 
-    expect(screen.queryByRole('columnheader', { name: /Retención/ })).not.toBeInTheDocument();
+    expect(screen.queryByText('Retención', { selector: 'label' })).not.toBeInTheDocument();
     expect(screen.queryByText('ITBIS Retenido (RD$)')).not.toBeInTheDocument();
     expect(screen.queryByText('ISR Retenido (RD$)')).not.toBeInTheDocument();
   });
@@ -101,7 +101,7 @@ describe('NuevaEcfPage — campos de retención según tipo', () => {
 
       await user.selectOptions(getTipoSelect(), tipo);
 
-      expect(screen.getByRole('columnheader', { name: /Retención/ })).toBeInTheDocument();
+      expect(screen.getByText('Retención', { selector: 'label' })).toBeInTheDocument();
       expect(getRetencionSelect()).not.toBeRequired();
     },
   );
@@ -115,7 +115,7 @@ describe('NuevaEcfPage — campos de retención según tipo', () => {
     expect(
       screen.getByText(/Este tipo requiere indicar Retención\/Percepción en cada línea/),
     ).toBeInTheDocument();
-    expect(screen.getByRole('columnheader', { name: 'Retención *' })).toBeInTheDocument();
+    expect(screen.getByText('Retención *')).toBeInTheDocument();
     expect(getRetencionSelect()).toBeRequired();
   });
 });
@@ -220,6 +220,7 @@ describe('NuevaEcfPage — submit', () => {
             descripcion: 'Servicios de consultoría',
             indicadorBienoServicio: 1,
             unidadMedida: 43,
+            indicadorFacturacion: 1,
             cantidad: 2,
             precioUnitario: 1000,
             descuentoLinea: 0,
@@ -262,6 +263,7 @@ describe('NuevaEcfPage — submit', () => {
         descripcion: 'Venta al consumidor',
         indicadorBienoServicio: 1,
         unidadMedida: 43,
+        indicadorFacturacion: 1,
         cantidad: 1,
         precioUnitario: 350.5,
         descuentoLinea: 0,

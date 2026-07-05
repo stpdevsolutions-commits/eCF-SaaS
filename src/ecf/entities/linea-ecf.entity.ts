@@ -26,6 +26,10 @@ export class LineaEcf {
   @Column({ type: 'int', nullable: true })
   unidadMedida?: number;
 
+  // IndicadorFacturacion (XSD IndicadorFacturacionType): 1=ITBIS 18%, 2=ITBIS 16%, 3=ITBIS 0%, 4=Exento
+  @Column({ type: 'int', default: 1 })
+  indicadorFacturacion!: number;
+
   @Column({ type: 'int' })
   cantidad!: number;
 

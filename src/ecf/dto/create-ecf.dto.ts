@@ -24,6 +24,11 @@ export class CreateLineaEcfDto {
   @IsOptional()
   unidadMedida?: number;
 
+  // IndicadorFacturacion: 1=ITBIS 18%, 2=ITBIS 16%, 3=ITBIS 0%, 4=Exento
+  @IsIn([1, 2, 3, 4])
+  @IsOptional()
+  indicadorFacturacion?: number = 1;
+
   @IsNumber()
   cantidad!: number;
 

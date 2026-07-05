@@ -124,8 +124,8 @@ export class EcfXmlService {
       const descuento = Number(linea.descuentoLinea);
       lines.push('    <Item>');
       lines.push(`      <NumeroLinea>${i + 1}</NumeroLinea>`);
-      // IndicadorFacturacion: 1 = Facturación Normal
-      lines.push('      <IndicadorFacturacion>1</IndicadorFacturacion>');
+      // IndicadorFacturacion: 1=ITBIS 18%, 2=ITBIS 16%, 3=ITBIS 0%, 4=Exento
+      lines.push(`      <IndicadorFacturacion>${linea.indicadorFacturacion ?? 1}</IndicadorFacturacion>`);
       if (linea.indicadorAgenteRetencionoPercepcion) {
         lines.push('      <Retencion>');
         lines.push(`        <IndicadorAgenteRetencionoPercepcion>${linea.indicadorAgenteRetencionoPercepcion}</IndicadorAgenteRetencionoPercepcion>`);

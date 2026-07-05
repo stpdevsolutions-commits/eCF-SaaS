@@ -6,6 +6,7 @@ import { createEcf, updateEcf } from '@/lib/api';
 import { CreateLineaEcfDto, Ecf } from '@/lib/types';
 import {
   BIEN_O_SERVICIO,
+  TASA_ITBIS,
   TIPOS_CON_RETENCION,
   TIPOS_ECF,
   TIPOS_INGRESO,
@@ -18,6 +19,7 @@ interface LineaForm {
   descripcion: string;
   indicadorBienoServicio: string;
   unidadMedida: string;
+  indicadorFacturacion: string; // IndicadorFacturacion: 1=18%, 2=16%, 3=0%, 4=Exento
   cantidad: string;
   precioUnitario: string;
   descuentoLinea: string;
@@ -30,6 +32,7 @@ const LINEA_VACIA: LineaForm = {
   descripcion: '',
   indicadorBienoServicio: '1',
   unidadMedida: '43', // Unidad
+  indicadorFacturacion: '1',
   cantidad: '1',
   precioUnitario: '',
   descuentoLinea: '0',
@@ -38,12 +41,22 @@ const LINEA_VACIA: LineaForm = {
   montoIsrRetenido: '',
 };
 
+// Debe reflejar exactamente EcfService.TASA_POR_INDICADOR (backend).
+const TASA_POR_INDICADOR: Record<string, number> = { '1': 0.18, '2': 0.16, '3': 0, '4': 0 };
+
+// Debe reflejar exactamente XsdValidatorService.calculateLineTotal (backend)
+// para que el preview en pantalla no difiera en centavos del total guardado.
+function redondear(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
 function calcularLinea(linea: LineaForm) {
   const cant = parseFloat(linea.cantidad) || 0;
   const precio = parseFloat(linea.precioUnitario) || 0;
   const desc = parseFloat(linea.descuentoLinea) || 0;
   const subtotal = cant * precio - desc;
-  const itbis = subtotal * 0.18;
+  const tasa = TASA_POR_INDICADOR[linea.indicadorFacturacion] ?? 0.18;
+  const itbis = redondear(subtotal * tasa);
   const total = subtotal + itbis;
   return { subtotal, itbis, total };
 }
@@ -61,6 +74,7 @@ function lineaDesdeExistente(l: NonNullable<Ecf['lineas']>[number]): LineaForm {
     descripcion: l.descripcion,
     indicadorBienoServicio: String(l.indicadorBienoServicio ?? 1),
     unidadMedida: l.unidadMedida ? String(l.unidadMedida) : '',
+    indicadorFacturacion: String(l.indicadorFacturacion ?? 1),
     cantidad: String(l.cantidad),
     precioUnitario: String(l.precioUnitario),
     descuentoLinea: String(l.descuentoLinea ?? 0),
@@ -141,7 +155,9 @@ export default function EcfForm({ modo, ecfExistente }: EcfFormProps) {
     },
     { subtotal: 0, itbis: 0, total: 0 },
   );
-  const propinaEstimada = aplicaPropinaLegal ? totalesLineas.subtotal * 0.1 : 0;
+  // Igual que EcfService.calcularLineasYTotales (backend): 10% sobre el
+  // subtotal gravado de todas las líneas, redondeado a 2 decimales.
+  const propinaEstimada = aplicaPropinaLegal ? redondear(totalesLineas.subtotal * 0.1) : 0;
   const totales = { ...totalesLineas, total: totalesLineas.total + propinaEstimada };
 
   // Línea handlers
@@ -188,6 +204,7 @@ export default function EcfForm({ modo, ecfExistente }: EcfFormProps) {
           descripcion: l.descripcion.trim(),
           indicadorBienoServicio: parseInt(l.indicadorBienoServicio, 10),
           unidadMedida: l.unidadMedida ? parseInt(l.unidadMedida, 10) : undefined,
+          indicadorFacturacion: parseInt(l.indicadorFacturacion, 10),
           cantidad: parseFloat(l.cantidad),
           precioUnitario: parseFloat(l.precioUnitario),
           descuentoLinea: parseFloat(l.descuentoLinea) || 0,
@@ -442,184 +459,182 @@ export default function EcfForm({ modo, ecfExistente }: EcfFormProps) {
           </label>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-gray-200">
-                <th className="pb-2 text-left text-xs font-semibold text-gray-500 w-8">#</th>
-                <th className="pb-2 text-left text-xs font-semibold text-gray-500 min-w-[180px]">
-                  Descripción
-                </th>
-                <th className="pb-2 text-left text-xs font-semibold text-gray-500 w-28">
-                  Bien o Servicio
-                </th>
-                <th className="pb-2 text-left text-xs font-semibold text-gray-500 w-32">
-                  Unidad de Medida
-                </th>
-                <th className="pb-2 text-right text-xs font-semibold text-gray-500 w-20">Cant.</th>
-                <th className="pb-2 text-right text-xs font-semibold text-gray-500 w-28">
-                  Precio (RD$)
-                </th>
-                <th className="pb-2 text-right text-xs font-semibold text-gray-500 w-24">
-                  Descuento (RD$)
-                </th>
+        <div className="space-y-4">
+          {lineas.map((linea, i) => {
+            const { subtotal, itbis, total } = calcularLinea(linea);
+            return (
+              <div key={i} className="border border-gray-200 rounded-lg p-4 bg-gray-50/40">
+                <div className="flex items-start justify-between gap-3 mb-3">
+                  <span className="text-xs font-semibold text-gray-400 mt-2.5">
+                    Línea {i + 1}
+                  </span>
+                  {lineas.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => removeLinea(i)}
+                      className="text-red-400 hover:text-red-600 transition-colors text-sm font-medium"
+                      title="Eliminar línea"
+                    >
+                      Eliminar ×
+                    </button>
+                  )}
+                </div>
+
+                <div className="mb-3">
+                  <label className="label">Descripción *</label>
+                  <input
+                    type="text"
+                    required
+                    value={linea.descripcion}
+                    onChange={(e) => updateLinea(i, 'descripcion', e.target.value)}
+                    placeholder="Descripción del bien o servicio"
+                    className="input-field"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-3">
+                  <div>
+                    <label className="label">Bien o Servicio</label>
+                    <select
+                      value={linea.indicadorBienoServicio}
+                      onChange={(e) => updateLinea(i, 'indicadorBienoServicio', e.target.value)}
+                      className="input-field"
+                    >
+                      {BIEN_O_SERVICIO.map((o) => (
+                        <option key={o.value} value={o.value}>
+                          {o.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="label">Unidad de Medida</label>
+                    <select
+                      value={linea.unidadMedida}
+                      onChange={(e) => updateLinea(i, 'unidadMedida', e.target.value)}
+                      className="input-field"
+                    >
+                      <option value="">—</option>
+                      {UNIDADES_MEDIDA.map((u) => (
+                        <option key={u.value} value={u.value}>
+                          {u.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="label">Cantidad *</label>
+                    <input
+                      type="number"
+                      min="0.01"
+                      step="0.01"
+                      required
+                      value={linea.cantidad}
+                      onChange={(e) => updateLinea(i, 'cantidad', e.target.value)}
+                      className="input-field"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-3">
+                  <div>
+                    <label className="label">Precio (RD$) *</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      required
+                      value={linea.precioUnitario}
+                      onChange={(e) => updateLinea(i, 'precioUnitario', e.target.value)}
+                      placeholder="0.00"
+                      className="input-field"
+                    />
+                  </div>
+                  <div>
+                    <label className="label">Descuento (RD$)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={linea.descuentoLinea}
+                      onChange={(e) => updateLinea(i, 'descuentoLinea', e.target.value)}
+                      className="input-field"
+                    />
+                  </div>
+                  <div>
+                    <label className="label">Itbis</label>
+                    <select
+                      value={linea.indicadorFacturacion}
+                      onChange={(e) => updateLinea(i, 'indicadorFacturacion', e.target.value)}
+                      className="input-field"
+                    >
+                      {TASA_ITBIS.map((t) => (
+                        <option key={t.value} value={t.value}>
+                          {t.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
                 {soportaRetencion && (
-                  <>
-                    <th className="pb-2 text-left text-xs font-semibold text-gray-500 w-32">
-                      Retención{retencionRequerida ? ' *' : ''}
-                    </th>
-                    <th className="pb-2 text-right text-xs font-semibold text-gray-500 w-28">
-                      ITBIS Retenido (RD$)
-                    </th>
-                    <th className="pb-2 text-right text-xs font-semibold text-gray-500 w-28">
-                      ISR Retenido (RD$)
-                    </th>
-                  </>
-                )}
-                <th className="pb-2 text-right text-xs font-semibold text-gray-500 w-28">Itbis</th>
-                <th className="pb-2 text-right text-xs font-semibold text-gray-500 w-28">
-                  Valor (RD$)
-                </th>
-                <th className="pb-2 w-8" />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
-              {lineas.map((linea, i) => {
-                const { itbis, total } = calcularLinea(linea);
-                return (
-                  <tr key={i}>
-                    <td className="py-2 pr-2 text-gray-400 text-xs">{i + 1}</td>
-                    <td className="py-2 pr-2">
-                      <input
-                        type="text"
-                        required
-                        value={linea.descripcion}
-                        onChange={(e) => updateLinea(i, 'descripcion', e.target.value)}
-                        placeholder="Descripción del bien o servicio"
-                        className="input-field text-xs"
-                      />
-                    </td>
-                    <td className="py-2 pr-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
+                    <div>
+                      <label className="label">
+                        Retención{retencionRequerida ? ' *' : ''}
+                      </label>
                       <select
-                        value={linea.indicadorBienoServicio}
-                        onChange={(e) => updateLinea(i, 'indicadorBienoServicio', e.target.value)}
-                        className="input-field text-xs"
+                        required={retencionRequerida}
+                        value={linea.indicadorRetencion}
+                        onChange={(e) => updateLinea(i, 'indicadorRetencion', e.target.value)}
+                        className="input-field"
                       >
-                        {BIEN_O_SERVICIO.map((o) => (
-                          <option key={o.value} value={o.value}>
-                            {o.label}
-                          </option>
-                        ))}
+                        <option value="">— Ninguna —</option>
+                        <option value="1">Retención</option>
+                        <option value="2">Percepción</option>
                       </select>
-                    </td>
-                    <td className="py-2 pr-2">
-                      <select
-                        value={linea.unidadMedida}
-                        onChange={(e) => updateLinea(i, 'unidadMedida', e.target.value)}
-                        className="input-field text-xs"
-                      >
-                        <option value="">—</option>
-                        {UNIDADES_MEDIDA.map((u) => (
-                          <option key={u.value} value={u.value}>
-                            {u.label}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                    <td className="py-2 pr-2">
-                      <input
-                        type="number"
-                        min="0.01"
-                        step="0.01"
-                        required
-                        value={linea.cantidad}
-                        onChange={(e) => updateLinea(i, 'cantidad', e.target.value)}
-                        className="input-field text-xs text-right"
-                      />
-                    </td>
-                    <td className="py-2 pr-2">
+                    </div>
+                    <div>
+                      <label className="label">ITBIS Retenido (RD$)</label>
                       <input
                         type="number"
                         min="0"
                         step="0.01"
-                        required
-                        value={linea.precioUnitario}
-                        onChange={(e) => updateLinea(i, 'precioUnitario', e.target.value)}
+                        value={linea.montoItbisRetenido}
+                        onChange={(e) => updateLinea(i, 'montoItbisRetenido', e.target.value)}
                         placeholder="0.00"
-                        className="input-field text-xs text-right"
+                        className="input-field"
                       />
-                    </td>
-                    <td className="py-2 pr-2">
+                    </div>
+                    <div>
+                      <label className="label">ISR Retenido (RD$)</label>
                       <input
                         type="number"
                         min="0"
                         step="0.01"
-                        value={linea.descuentoLinea}
-                        onChange={(e) => updateLinea(i, 'descuentoLinea', e.target.value)}
-                        className="input-field text-xs text-right"
+                        value={linea.montoIsrRetenido}
+                        onChange={(e) => updateLinea(i, 'montoIsrRetenido', e.target.value)}
+                        placeholder="0.00"
+                        className="input-field"
                       />
-                    </td>
-                    {soportaRetencion && (
-                      <>
-                        <td className="py-2 pr-2">
-                          <select
-                            required={retencionRequerida}
-                            value={linea.indicadorRetencion}
-                            onChange={(e) => updateLinea(i, 'indicadorRetencion', e.target.value)}
-                            className="input-field text-xs"
-                          >
-                            <option value="">— Ninguna —</option>
-                            <option value="1">Retención</option>
-                            <option value="2">Percepción</option>
-                          </select>
-                        </td>
-                        <td className="py-2 pr-2">
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={linea.montoItbisRetenido}
-                            onChange={(e) => updateLinea(i, 'montoItbisRetenido', e.target.value)}
-                            placeholder="0.00"
-                            className="input-field text-xs text-right"
-                          />
-                        </td>
-                        <td className="py-2 pr-2">
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={linea.montoIsrRetenido}
-                            onChange={(e) => updateLinea(i, 'montoIsrRetenido', e.target.value)}
-                            placeholder="0.00"
-                            className="input-field text-xs text-right"
-                          />
-                        </td>
-                      </>
-                    )}
-                    <td className="py-2 pr-2 text-right text-gray-500 text-xs whitespace-nowrap">
-                      {formatRD(itbis)}
-                    </td>
-                    <td className="py-2 pr-2 text-right font-medium text-gray-900 text-xs whitespace-nowrap">
-                      {formatRD(total)}
-                    </td>
-                    <td className="py-2">
-                      {lineas.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => removeLinea(i)}
-                          className="text-red-400 hover:text-red-600 transition-colors p-1"
-                          title="Eliminar línea"
-                        >
-                          ×
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-gray-600 border-t border-gray-200 pt-3">
+                  <span>
+                    Subtotal: <span className="font-medium text-gray-800">{formatRD(subtotal)}</span>
+                  </span>
+                  <span>
+                    ITBIS: <span className="font-medium text-gray-800">{formatRD(itbis)}</span>
+                  </span>
+                  <span>
+                    Valor: <span className="font-semibold text-gray-900">{formatRD(total)}</span>
+                  </span>
+                </div>
+              </div>
+            );
+          })}
         </div>
 
         <button
@@ -637,7 +652,7 @@ export default function EcfForm({ modo, ecfExistente }: EcfFormProps) {
               <span>{formatRD(totalesLineas.subtotal)}</span>
             </div>
             <div className="flex justify-between text-gray-600">
-              <span>ITBIS (18%)</span>
+              <span>ITBIS</span>
               <span>{formatRD(totalesLineas.itbis)}</span>
             </div>
             {aplicaPropinaLegal && (

@@ -40,6 +40,18 @@ export class Empresa {
   @Column({ type: 'text', nullable: true })
   logoBase64?: string;
 
+  /**
+   * Token de sesión DGII y bandera de certificado activo. Viven en la
+   * Empresa (no en User) para que cualquier miembro de la empresa pueda
+   * transmitir/consultar/cancelar e-CF una vez que un admin se autenticó
+   * con la DGII, sin depender de qué usuario ejecutó el authenticate.
+   */
+  @Column({ type: 'boolean', default: false })
+  certificadoDgii!: boolean;
+
+  @Column({ type: 'varchar', nullable: true })
+  tokenDgii?: string;
+
   @Column({
     type: 'enum',
     enum: ['regimen_ordinario', 'regimen_simplificado', 'monotributo'],

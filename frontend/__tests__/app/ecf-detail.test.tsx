@@ -69,6 +69,7 @@ const baseEcf: Ecf = {
       numero: 1,
       descripcion: 'Servicio de consultoría',
       indicadorBienoServicio: 2,
+      indicadorFacturacion: 1,
       cantidad: 1,
       precioUnitario: 1000,
       descuentoLinea: 0,

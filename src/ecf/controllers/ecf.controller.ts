@@ -144,13 +144,13 @@ export class EcfController {
   @Post(':id/transmit')
   @ApiOperation({ summary: 'Transmitir comprobante firmado a la DGII' })
   async transmit(@Param('id') id: string, @Request() req: any) {
-    return await this.ecfService.transmitEcf(id, req.user.empresaId, req.user.id);
+    return await this.ecfService.transmitEcf(id, req.user.empresaId);
   }
 
   @Get(':id/status')
   @ApiOperation({ summary: 'Consultar estado del comprobante en la DGII' })
   async status(@Param('id') id: string, @Request() req: any) {
-    return await this.ecfService.checkStatus(id, req.user.empresaId, req.user.id);
+    return await this.ecfService.checkStatus(id, req.user.empresaId);
   }
 
   @Post(':id/cancel')
@@ -160,11 +160,6 @@ export class EcfController {
     @Body() body: { motivo: string },
     @Request() req: any,
   ) {
-    return await this.ecfService.cancelEcf(
-      id,
-      req.user.empresaId,
-      req.user.id,
-      body.motivo,
-    );
+    return await this.ecfService.cancelEcf(id, req.user.empresaId, body.motivo);
   }
 }

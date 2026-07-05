@@ -40,6 +40,14 @@ export const BIEN_O_SERVICIO = [
   { value: 2, label: 'Servicio' },
 ];
 
+// IndicadorFacturacionType (tasa de ITBIS aplicada a la línea)
+export const TASA_ITBIS = [
+  { value: 1, label: '18%' },
+  { value: 2, label: '16%' },
+  { value: 3, label: '0%' },
+  { value: 4, label: 'Exento' },
+];
+
 // UnidadMedidaType (XSD e-CF, códigos 1-54)
 export const UNIDADES_MEDIDA = [
   { value: 1, label: 'Barril' },

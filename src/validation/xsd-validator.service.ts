@@ -236,9 +236,10 @@ export class XsdValidatorService {
     cantidad: number,
     precioUnitario: number,
     descuento = 0,
+    tasaItbis = 0.18,
   ): { subtotal: number; itbis: number; total: number } {
     const subtotal = cantidad * precioUnitario - descuento;
-    const itbis = this.calculateITBIS(subtotal);
+    const itbis = this.calculateITBIS(subtotal, tasaItbis);
     const total = subtotal + itbis;
     return { subtotal, itbis, total };
   }

@@ -13,6 +13,7 @@ export interface LineaEcf {
   descripcion: string;
   indicadorBienoServicio: number; // 1 = Bien, 2 = Servicio
   unidadMedida?: number;
+  indicadorFacturacion: number; // 1=ITBIS 18%, 2=ITBIS 16%, 3=ITBIS 0%, 4=Exento
   cantidad: number;
   precioUnitario: number;
   descuentoLinea: number;
@@ -67,6 +68,7 @@ export interface CreateLineaEcfDto {
   descripcion: string;
   indicadorBienoServicio?: number;
   unidadMedida?: number;
+  indicadorFacturacion?: number;
   cantidad: number;
   precioUnitario: number;
   descuentoLinea?: number;

@@ -16,7 +16,6 @@ import {
 } from 'dgii-ecf';
 import { Ecf } from '../entities/ecf.entity';
 import { LineaEcf } from '../entities/linea-ecf.entity';
-import { User } from '../../auth/entities/user.entity';
 import { Empresa } from '../../empresa/entities/empresa.entity';
 import { CreateEcfDto, CreateLineaEcfDto } from '../dto/create-ecf.dto';
 import { UpdateEcfDto } from '../dto/update-ecf.dto';
@@ -35,8 +34,6 @@ export class EcfService {
     private ecfRepository: Repository<Ecf>,
     @InjectRepository(LineaEcf)
     private lineaRepository: Repository<LineaEcf>,
-    @InjectRepository(User)
-    private userRepository: Repository<User>,
     @InjectRepository(Empresa)
     private empresaRepository: Repository<Empresa>,
     private validatorService: XsdValidatorService,
@@ -51,6 +48,14 @@ export class EcfService {
    * Calcula líneas + totales (incluida la Propina Legal opcional) a partir
    * del DTO. Compartido entre create() y update() para no duplicar la lógica.
    */
+  /** IndicadorFacturacion (XSD) -> tasa de ITBIS aplicada a la línea. */
+  private static readonly TASA_POR_INDICADOR: Record<number, number> = {
+    1: 0.18, // ITBIS 1 (18%)
+    2: 0.16, // ITBIS 2 (16%)
+    3: 0, // ITBIS 3 (0%)
+    4: 0, // Exento
+  };
+
   private calcularLineasYTotales(lineasDto: CreateLineaEcfDto[], aplicaPropinaLegal: boolean) {
     let montoTotal = 0;
     let montoITBIS = 0;
@@ -58,10 +63,13 @@ export class EcfService {
     let montoRentaRetenido = 0;
 
     const lineas = lineasDto.map((linea, index) => {
+      const indicadorFacturacion = linea.indicadorFacturacion ?? 1;
+      const tasaItbis = EcfService.TASA_POR_INDICADOR[indicadorFacturacion] ?? 0.18;
       const { subtotal, itbis, total } = this.validatorService.calculateLineTotal(
         linea.cantidad,
         linea.precioUnitario,
         linea.descuentoLinea || 0,
+        tasaItbis,
       );
 
       montoTotal += total;
@@ -73,6 +81,7 @@ export class EcfService {
         numero: index + 1,
         ...linea,
         indicadorBienoServicio: linea.indicadorBienoServicio ?? 1,
+        indicadorFacturacion,
         subtotal,
         itbis,
       };
@@ -522,21 +531,17 @@ export class EcfService {
 
   // ── Transmisión a la DGII ────────────────────────────────────────────────────
 
-  private async obtenerTokenDgii(usuarioId: string): Promise<string> {
-    const usuario = await this.userRepository.findOne({ where: { id: usuarioId } });
-    if (!usuario?.tokenDgii) {
+  private async obtenerTokenDgii(empresaId: string): Promise<string> {
+    const empresa = await this.empresaRepository.findOne({ where: { id: empresaId } });
+    if (!empresa?.tokenDgii) {
       throw new BadRequestException(
         'Debes autenticarte con la DGII primero (POST /dgii/authenticate)',
       );
     }
-    return usuario.tokenDgii;
+    return empresa.tokenDgii;
   }
 
-  /**
-   * @param empresaId empresa del usuario autenticado (scoping del e-CF)
-   * @param usuarioId usuario autenticado (dueño del token DGII a usar)
-   */
-  async transmitEcf(id: string, empresaId: string, usuarioId: string) {
+  async transmitEcf(id: string, empresaId: string) {
     const ecf = await this.findOne(id, empresaId);
 
     if (ecf.estado !== 'signed') {
@@ -545,7 +550,7 @@ export class EcfService {
       );
     }
 
-    const token = await this.obtenerTokenDgii(usuarioId);
+    const token = await this.obtenerTokenDgii(empresaId);
     const resultado = await this.dgiiService.transmitEcf(ecf, token);
 
     ecf.uuid = resultado.uuid;
@@ -564,7 +569,7 @@ export class EcfService {
 
   // ── Consulta de estado en la DGII ────────────────────────────────────────────
 
-  async checkStatus(id: string, empresaId: string, usuarioId: string) {
+  async checkStatus(id: string, empresaId: string) {
     const ecf = await this.findOne(id, empresaId);
 
     if (!ecf.uuid) {
@@ -573,7 +578,7 @@ export class EcfService {
       );
     }
 
-    const token = await this.obtenerTokenDgii(usuarioId);
+    const token = await this.obtenerTokenDgii(empresaId);
     const resultado = await this.dgiiService.queryEcfStatus(ecf.uuid, token);
 
     const ESTADO_DGII_A_LOCAL: Record<string, string> = {
@@ -597,7 +602,7 @@ export class EcfService {
 
   // ── Cancelación en la DGII ───────────────────────────────────────────────────
 
-  async cancelEcf(id: string, empresaId: string, usuarioId: string, motivo: string) {
+  async cancelEcf(id: string, empresaId: string, motivo: string) {
     const ecf = await this.findOne(id, empresaId);
 
     if (!ecf.uuid) {
@@ -609,7 +614,7 @@ export class EcfService {
       throw new BadRequestException('Este comprobante ya está cancelado');
     }
 
-    const token = await this.obtenerTokenDgii(usuarioId);
+    const token = await this.obtenerTokenDgii(empresaId);
 
     // Datos para construir el ANECF (anulación de rangos) en modo real; en
     // modo mock DgiiService los ignora. ecf.encf siempre debe existir aquí:
