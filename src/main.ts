@@ -6,7 +6,9 @@ import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
-  app.setGlobalPrefix('api');
+  // 'health'/'version' fuera del prefijo: son rutas de operación (las pega el
+  // HEALTHCHECK del Dockerfile en /health, sin /api) no recursos de la API.
+  app.setGlobalPrefix('api', { exclude: ['health', 'version'] });
   // El límite por defecto de Express (100kb) rechaza el logo de la empresa
   // (imagen en base64 dentro del body JSON de PATCH /empresa).
   app.use(json({ limit: '5mb' }));
