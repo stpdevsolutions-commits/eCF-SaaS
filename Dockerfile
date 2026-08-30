@@ -11,7 +11,11 @@ COPY package*.json ./
 RUN npm ci --only=production
 COPY --from=builder /app/dist ./dist
 USER node
-HEALTHCHECK --interval=30s --timeout=3s CMD node -e "require('http').get('http://localhost:3000/health', (r) => {if (r.statusCode !== 200) throw new Error(r.statusCode)})"
+# wget (busybox, ya viene en la imagen) en vez de "node -e": levantar un
+# proceso de Node nuevo por chequeo (cada 30s) competía por CPU con el
+# servidor bajo carga real y superaba el timeout de 3s aunque la API
+# respondiera bien — daba "unhealthy" por lentitud del check, no de la app.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s CMD wget -qO- http://localhost:3000/health || exit 1
 ENTRYPOINT ["dumb-init", "--"]
 CMD ["node", "dist/main.js"]
 EXPOSE 3000
