@@ -22,3 +22,6 @@ frontend/*.tsbuildinfo
 *.p12
 *.pfx
 Facturacion Electronica/
+
+backup-ecf.dump
+docs-dgii-referencia/
