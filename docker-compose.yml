@@ -1,43 +1,59 @@
-version: '3.8'
-
 services:
-  postgres:
+  ecf-postgres:
     image: postgres:15-alpine
-    container_name: ecf_saas_postgres
+    container_name: ecf-postgres
+    restart: unless-stopped
     environment:
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: ecf_saas
-    ports:
-      - "5433:5432"
+      POSTGRES_USER: ${DATABASE_USER}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
+      POSTGRES_DB: ${DATABASE_NAME}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - ecf-postgres-data:/var/lib/postgresql/data
+    networks:
+      - ecf-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USER}"]
       interval: 10s
       timeout: 5s
       retries: 5
-    restart: unless-stopped
 
-  pgadmin:
-    image: dpage/pgadmin4:latest
-    container_name: ecf_saas_pgadmin
-    environment:
-      PGADMIN_DEFAULT_EMAIL: admin@example.com
-      PGADMIN_DEFAULT_PASSWORD: admin
-    ports:
-      - "5050:80"
-    depends_on:
-      postgres:
-        condition: service_healthy
-    restart: unless-stopped
-
-  redis:
+  ecf-redis:
     image: redis:7-alpine
-    container_name: ecf_saas_redis
-    ports:
-      - "6379:6379"
+    container_name: ecf-redis
     restart: unless-stopped
+    networks:
+      - ecf-network
+
+  ecf-api:
+    build: .
+    container_name: ecf-api
+    restart: unless-stopped
+    env_file:
+      - .env
+    depends_on:
+      ecf-postgres:
+        condition: service_healthy
+    networks:
+      - ecf-network
+      - stp-network
+
+  ecf-frontend:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_URL: https://ecf-api.stpsoluciones.com
+    container_name: ecf-frontend
+    restart: unless-stopped
+    depends_on:
+      - ecf-api
+    networks:
+      - stp-network
+
+networks:
+  ecf-network:
+  stp-network:
+    external: true
+    name: stp_stp-network
 
 volumes:
-  postgres_data:
-    driver: local
+  ecf-postgres-data:
