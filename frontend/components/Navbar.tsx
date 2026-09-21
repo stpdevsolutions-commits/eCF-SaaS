@@ -16,6 +16,7 @@ export default function Navbar() {
   const navLinks = [
     { href: '/dashboard', label: 'Comprobantes' },
     { href: '/ecf/nueva', label: 'Nuevo e-CF' },
+    { href: '/ecf-recibidos', label: 'Recibidos' },
     { href: '/reportes', label: 'Reportes' },
     { href: '/dgii', label: 'DGII' },
     { href: '/opciones', label: 'Opciones' },

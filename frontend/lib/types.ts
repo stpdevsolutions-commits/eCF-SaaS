@@ -176,3 +176,26 @@ export interface ResumenReporte {
   porEstado: Record<string, number>;
   porTipo: Record<string, number>;
 }
+
+// ── e-CF recibidos (rol receptor) ───────────────────────────────────────────
+
+export type EstadoAcuseRecibido = 'recibido' | 'no_recibido';
+export type AprobacionComercial = 'pendiente' | 'aceptado' | 'rechazado';
+
+/**
+ * e-CF que STP recibió de un tercero (rol receptor) vía la URL de Recepción
+ * del Directorio FE de la DGII. Ver DgiiReceptorService en el backend.
+ */
+export interface EcfRecibido {
+  id: string;
+  rncEmisor: string;
+  rncComprador: string;
+  encf: string;
+  tipoEcf?: number;
+  fechaEmision?: string;
+  montoTotal?: number;
+  estadoAcuse: EstadoAcuseRecibido;
+  codigoMotivoNoRecibido?: string;
+  aprobacionComercial: AprobacionComercial;
+  createdAt: string;
+}

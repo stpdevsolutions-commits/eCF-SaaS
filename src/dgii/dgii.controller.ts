@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Request, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Request, UseGuards } from '@nestjs/common';
 import {
   ApiTags,
   ApiBearerAuth,
@@ -7,6 +7,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { DgiiService } from './dgii.service';
+import { DgiiReceptorService } from './dgii-receptor.service';
 import { Empresa } from '../empresa/entities/empresa.entity';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 
@@ -22,6 +23,7 @@ import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 export class DgiiController {
   constructor(
     private dgiiService: DgiiService,
+    private receptorService: DgiiReceptorService,
     @InjectRepository(Empresa)
     private empresaRepository: Repository<Empresa>,
   ) {}
@@ -44,5 +46,28 @@ export class DgiiController {
     });
 
     return resultado;
+  }
+
+  @Get('recibidos')
+  @ApiOperation({ summary: 'Listar los e-CF recibidos de terceros (rol receptor)' })
+  async listarRecibidos() {
+    return this.receptorService.listar();
+  }
+
+  @Get('recibidos/:id')
+  @ApiOperation({ summary: 'Ver el detalle de un e-CF recibido' })
+  async obtenerRecibido(@Param('id') id: string) {
+    return this.receptorService.obtener(id);
+  }
+
+  @Post('recibidos/:id/aprobacion-comercial')
+  @ApiOperation({
+    summary: 'STP, como comprador, aprueba o rechaza un e-CF recibido y lo notifica a la DGII (ACECF)',
+  })
+  async emitirAprobacionComercial(
+    @Param('id') id: string,
+    @Body() body: { estado: 'aceptado' | 'rechazado'; detalleMotivoRechazo?: string },
+  ) {
+    return this.receptorService.emitirAprobacionComercial(id, body.estado, body.detalleMotivoRechazo);
   }
 }

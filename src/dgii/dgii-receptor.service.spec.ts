@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { DgiiReceptorService } from './dgii-receptor.service';
@@ -6,6 +6,8 @@ import { EcfRecibido } from '../ecf/entities/ecf-recibido.entity';
 import { Ecf } from '../ecf/entities/ecf.entity';
 import { Empresa } from '../empresa/entities/empresa.entity';
 import { EcfSigningService } from '../ecf/services/ecf-signing.service';
+import { DgiiService } from './dgii.service';
+import { verificarFirmaXml } from './verificar-firma-xml';
 
 const mockSimpleXMLParseBody = jest.fn();
 const mockGetECFDataFromXML = jest.fn();
@@ -28,6 +30,11 @@ jest.mock('dgii-ecf', () => ({
   },
 }));
 
+jest.mock('./verificar-firma-xml', () => ({
+  verificarFirmaXml: jest.fn(),
+}));
+const mockVerificarFirmaXml = verificarFirmaXml as jest.Mock;
+
 /** Simula el Document que devuelve simpleXMLParseBody, respaldado en un mapa tag -> valor. */
 function fakeDoc(campos: Record<string, string>): any {
   return {
@@ -42,14 +49,17 @@ describe('DgiiReceptorService', () => {
   let ecfRepository: any;
   let empresaRepository: any;
   let signingService: any;
+  let dgiiService: any;
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    mockVerificarFirmaXml.mockReturnValue(true);
 
     ecfRecibidoRepository = {
       findOne: jest.fn().mockResolvedValue(null),
       create: jest.fn().mockImplementation((data) => data),
-      save: jest.fn().mockResolvedValue(undefined),
+      save: jest.fn().mockImplementation((data) => Promise.resolve(data)),
+      find: jest.fn().mockResolvedValue([]),
     };
     ecfRepository = {
       findOne: jest.fn().mockResolvedValue(null),
@@ -61,6 +71,9 @@ describe('DgiiReceptorService', () => {
     signingService = {
       signXml: jest.fn().mockImplementation((xml: string) => Promise.resolve(`${xml}<Signature/>`)),
     };
+    dgiiService = {
+      enviarAprobacionComercial: jest.fn().mockResolvedValue({ codigo: '01', estado: 'Aprobación Comercial Aprobada.', mensaje: [] }),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -69,6 +82,7 @@ describe('DgiiReceptorService', () => {
         { provide: getRepositoryToken(Ecf), useValue: ecfRepository },
         { provide: getRepositoryToken(Empresa), useValue: empresaRepository },
         { provide: EcfSigningService, useValue: signingService },
+        { provide: DgiiService, useValue: dgiiService },
       ],
     }).compile();
 
@@ -124,6 +138,17 @@ describe('DgiiReceptorService', () => {
       await service.procesarRecepcion('<ECF>...</ECF>');
 
       expect(mockGetECFDataFromXML).toHaveBeenCalledWith(expect.anything(), '132943058', '1', '3');
+      expect(ecfRecibidoRepository.save).not.toHaveBeenCalled();
+    });
+
+    it('responde "no recibido" (código 2) si la firma digital del XML no es válida', async () => {
+      mockSimpleXMLParseBody.mockReturnValue(fakeDoc(camposValidos));
+      mockVerificarFirmaXml.mockReturnValue(false);
+      mockGetECFDataFromXML.mockReturnValue('<ARECF>firma invalida</ARECF>');
+
+      await service.procesarRecepcion('<ECF>...</ECF>');
+
+      expect(mockGetECFDataFromXML).toHaveBeenCalledWith(expect.anything(), '132943058', '1', '2');
       expect(ecfRecibidoRepository.save).not.toHaveBeenCalled();
     });
 
@@ -186,6 +211,84 @@ describe('DgiiReceptorService', () => {
 
       await expect(service.procesarAprobacionComercial('<ACECF/>')).rejects.toThrow(
         BadRequestException,
+      );
+    });
+  });
+
+  describe('listar / obtener', () => {
+    it('listar devuelve los e-CF recibidos ordenados por más reciente', async () => {
+      ecfRecibidoRepository.find.mockResolvedValue([{ id: '1' }]);
+
+      const resultado = await service.listar();
+
+      expect(ecfRecibidoRepository.find).toHaveBeenCalledWith({ order: { createdAt: 'DESC' } });
+      expect(resultado).toEqual([{ id: '1' }]);
+    });
+
+    it('obtener lanza NotFoundException si no existe', async () => {
+      ecfRecibidoRepository.findOne.mockResolvedValue(null);
+
+      await expect(service.obtener('no-existe')).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('emitirAprobacionComercial', () => {
+    const recibidoBase: any = {
+      id: 'rec-1',
+      rncEmisor: '101672919',
+      rncComprador: '132943058',
+      encf: 'E310000000001',
+      fechaEmision: new Date('2026-09-15'),
+      createdAt: new Date('2026-09-15'),
+      montoTotal: '1180.00',
+      aprobacionComercial: 'pendiente',
+    };
+
+    it('firma y envía el ACECF de aceptación, y marca el e-CF recibido como aceptado', async () => {
+      ecfRecibidoRepository.findOne.mockResolvedValue({ ...recibidoBase });
+
+      const resultado = await service.emitirAprobacionComercial('rec-1', 'aceptado');
+
+      expect(signingService.signXml).toHaveBeenCalledWith(expect.stringContaining('<Estado>1</Estado>'), 'ACECF');
+      expect(dgiiService.enviarAprobacionComercial).toHaveBeenCalled();
+      expect(ecfRecibidoRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({ aprobacionComercial: 'aceptado' }),
+      );
+      expect(resultado.aprobacionComercial).toBe('aceptado');
+    });
+
+    it('firma y envía el ACECF de rechazo con el motivo', async () => {
+      ecfRecibidoRepository.findOne.mockResolvedValue({ ...recibidoBase });
+
+      await service.emitirAprobacionComercial('rec-1', 'rechazado', 'Producto no coincide');
+
+      const xmlFirmado = signingService.signXml.mock.calls[0][0];
+      expect(xmlFirmado).toContain('<Estado>2</Estado>');
+      expect(xmlFirmado).toContain('Producto no coincide');
+    });
+
+    it('lanza BadRequestException si se rechaza sin motivo', async () => {
+      ecfRecibidoRepository.findOne.mockResolvedValue({ ...recibidoBase });
+
+      await expect(service.emitirAprobacionComercial('rec-1', 'rechazado')).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    it('lanza BadRequestException si ya tenía una aprobación comercial registrada', async () => {
+      ecfRecibidoRepository.findOne.mockResolvedValue({ ...recibidoBase, aprobacionComercial: 'aceptado' });
+
+      await expect(service.emitirAprobacionComercial('rec-1', 'rechazado', 'motivo')).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(dgiiService.enviarAprobacionComercial).not.toHaveBeenCalled();
+    });
+
+    it('lanza NotFoundException si el e-CF recibido no existe', async () => {
+      ecfRecibidoRepository.findOne.mockResolvedValue(null);
+
+      await expect(service.emitirAprobacionComercial('no-existe', 'aceptado')).rejects.toThrow(
+        NotFoundException,
       );
     });
   });

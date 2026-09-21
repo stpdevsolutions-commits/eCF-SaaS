@@ -17,6 +17,13 @@ interface DgiiTransmitResponse {
   mensajes: string[];
 }
 
+/** Respuesta de la DGII al recibir una Aprobación o Rechazo Comercial (ACECF) propia. */
+export interface RespuestaAprobacionComercial {
+  codigo: string;
+  estado: string;
+  mensaje: string[];
+}
+
 /** Datos del e-CF necesarios para construir el ANECF (anulación de rangos). */
 export interface AnulacionRango {
   rncEmisor: string;
@@ -148,6 +155,14 @@ export class DgiiService {
         );
       }
 
+      // Entrega directa al receptor electrónico (Informe Técnico e-CF v1.0,
+      // sección 8, paso 3): además de transmitir a la DGII, el modelo pide
+      // entregar el mismo e-CF a la URL de Recepción que el receptor tenga
+      // registrada en el Directorio FE. Es best-effort — si el receptor no
+      // está en el directorio o su endpoint falla, no se revierte la
+      // transmisión ya aceptada por la DGII, solo se registra el intento.
+      await this.intentarEntregaDirecta(ecf, client, fileName);
+
       return {
         uuid: respuesta.trackId,
         codigo: '0',
@@ -274,6 +289,48 @@ export class DgiiService {
     }
   }
 
+  /**
+   * Envía a la DGII la Aprobación o Rechazo Comercial (ACECF) que STP emite
+   * como comprador sobre un e-CF recibido de un tercero (Informe Técnico
+   * e-CF v1.0, sección 4.4) — el XML ya debe venir firmado (rootElName
+   * 'ACECF'), lo arma y firma DgiiReceptorService.
+   */
+  async enviarAprobacionComercial(
+    signedXml: string,
+    fileName: string,
+  ): Promise<RespuestaAprobacionComercial> {
+    if (!(await this.modoReal())) {
+      return {
+        codigo: '01',
+        estado: 'Aprobación Comercial Aprobada. (mock)',
+        mensaje: [],
+      };
+    }
+
+    try {
+      const client = await this.getClient();
+      const respuesta = await client.sendCommercialApproval(signedXml, fileName);
+      if (!respuesta) {
+        throw new HttpException(
+          'La DGII no devolvió respuesta para la aprobación comercial',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+      return {
+        codigo: respuesta.codigo,
+        estado: respuesta.estado,
+        mensaje: respuesta.mensaje ?? [],
+      };
+    } catch (error) {
+      if (error instanceof HttpException) throw error;
+      this.logger.error(`Error enviando aprobación comercial a DGII: ${error}`);
+      throw new HttpException(
+        'Error enviando aprobación comercial a la DGII',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
   // ── Cliente DGII (dgii-ecf) ──────────────────────────────────────────────────
 
   private async modoReal(): Promise<boolean> {
@@ -291,5 +348,35 @@ export class DgiiService {
       })();
     }
     return this.clientPromise;
+  }
+
+  /**
+   * Intenta entregar el e-CF directo al receptor electrónico, consultando su
+   * URL de Recepción en el Directorio de Facturadores (Consulta Directorio
+   * Electrónico). Si el receptor no está en el directorio, no tiene URL de
+   * recepción registrada, o la entrega falla, solo se registra en el log —
+   * el e-CF ya quedó válido ante la DGII independientemente de este paso.
+   */
+  private async intentarEntregaDirecta(ecf: Ecf, client: ECF, fileName: string): Promise<void> {
+    try {
+      const directorio = await client.getCustomerDirectory(ecf.rncComprador);
+      const receptor = directorio?.[0];
+      if (!receptor?.urlRecepcion) {
+        this.logger.log(
+          `Receptor ${ecf.rncComprador} no tiene URL de Recepción en el Directorio FE — el e-CF ${ecf.encf} queda solo transmitido a la DGII`,
+        );
+        return;
+      }
+
+      await client.authenticate(receptor.urlRecepcion);
+      await client.sendElectronicDocument(ecf.xmlFirmado!, fileName, receptor.urlRecepcion);
+      this.logger.log(`e-CF ${ecf.encf} entregado directamente al receptor ${ecf.rncComprador}`);
+    } catch (error) {
+      this.logger.warn(
+        `No se pudo entregar el e-CF ${ecf.encf} directo al receptor ${ecf.rncComprador}: ${
+          error instanceof Error ? error.message : error
+        }`,
+      );
+    }
   }
 }

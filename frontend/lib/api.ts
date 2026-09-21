@@ -1,6 +1,7 @@
 import {
   CreateEcfDto,
   Ecf,
+  EcfRecibido,
   Empresa,
   EmpresaResponse,
   LoginResponse,
@@ -310,6 +311,35 @@ export async function authenticateDgii(
     body: JSON.stringify({ rncEmisor, usuario, clave }),
   });
   return handleResponse(res);
+}
+
+// ── e-CF Recibidos (rol receptor) ───────────────────────────────────────────
+
+export async function listEcfRecibidos(): Promise<EcfRecibido[]> {
+  const res = await fetch(`${API_URL}/api/dgii/recibidos`, {
+    headers: authHeaders(),
+  });
+  return handleResponse<EcfRecibido[]>(res);
+}
+
+export async function getEcfRecibido(id: string): Promise<EcfRecibido> {
+  const res = await fetch(`${API_URL}/api/dgii/recibidos/${id}`, {
+    headers: authHeaders(),
+  });
+  return handleResponse<EcfRecibido>(res);
+}
+
+export async function emitirAprobacionComercial(
+  id: string,
+  estado: 'aceptado' | 'rechazado',
+  detalleMotivoRechazo?: string,
+): Promise<EcfRecibido> {
+  const res = await fetch(`${API_URL}/api/dgii/recibidos/${id}/aprobacion-comercial`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ estado, detalleMotivoRechazo }),
+  });
+  return handleResponse<EcfRecibido>(res);
 }
 
 // ── Reportes ─────────────────────────────────────────────────────────────────

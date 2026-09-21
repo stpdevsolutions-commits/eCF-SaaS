@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 import { AnyFilesInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { Request } from 'express';
 import { DgiiReceptorService } from './dgii-receptor.service';
 
@@ -28,9 +29,14 @@ interface ArchivoSubido {
  *
  * Acepta tanto multipart/form-data (como el resto de los Web Service de
  * dgii-ecf) como XML plano en el cuerpo (ver text() en main.ts).
+ *
+ * Límite propio (30 req/min por IP), más estricto que el global de la app
+ * (100 req/min): son rutas públicas sin autenticación, y en operación
+ * normal solo las llama la DGII/otros emisores electrónicos.
  */
 @ApiTags('DGII — Webhooks (Recepción / Aprobación)')
 @Controller('dgii/webhook')
+@Throttle({ default: { limit: 30, ttl: 60_000 } })
 export class DgiiWebhookController {
   constructor(private receptorService: DgiiReceptorService) {}
 

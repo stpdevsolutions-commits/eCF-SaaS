@@ -14,6 +14,8 @@ const mockVoidENCF = jest.fn();
 const mockSetAuthToken = jest.fn();
 const mockConvertECF32ToRFCE = jest.fn();
 const mockSignXml = jest.fn();
+const mockGetCustomerDirectory = jest.fn();
+const mockSendCommercialApproval = jest.fn();
 
 jest.mock('dgii-ecf', () => {
   return {
@@ -30,6 +32,8 @@ jest.mock('dgii-ecf', () => {
       sendSummary: mockSendSummary,
       statusTrackId: mockStatusTrackId,
       voidENCF: mockVoidENCF,
+      getCustomerDirectory: mockGetCustomerDirectory,
+      sendCommercialApproval: mockSendCommercialApproval,
     })),
   };
 });
@@ -121,6 +125,8 @@ describe('DgiiService', () => {
   describe('transmitEcf (modo real)', () => {
     beforeEach(() => {
       mockCertificateService.usaCertificadoReal.mockResolvedValue(true);
+      // Por defecto, sin nada en el directorio: la entrega directa no aplica y no debe romper el flujo.
+      mockGetCustomerDirectory.mockResolvedValue(undefined);
     });
 
     it('rechaza si el e-CF no tiene xmlFirmado o encf', async () => {
@@ -197,6 +203,71 @@ describe('DgiiService', () => {
       const result = await service.transmitEcf(ecf, 'tok-123');
 
       expect(mockSendSummary).not.toHaveBeenCalled();
+      expect(result.uuid).toBe('track-xyz');
+    });
+
+    it('entrega el e-CF directo al receptor si el Directorio FE tiene su URL de Recepción', async () => {
+      const ecf = {
+        rncEmisor: '101000001',
+        rncComprador: '101999999',
+        encf: 'E310000000003',
+        tipoEcf: 'e-CF_31_v_1_0',
+        montoTotal: 1000,
+        xmlFirmado: '<ECF/>',
+      } as any;
+      mockSendElectronicDocument.mockResolvedValue({ trackId: 'track-xyz', mensajes: [] });
+      mockGetCustomerDirectory.mockResolvedValue([
+        { rnc: '101999999', urlRecepcion: 'https://receptor.example/recepcion', urlAceptacion: '', urlOpcional: '' },
+      ]);
+
+      await service.transmitEcf(ecf, 'tok-123');
+
+      expect(mockGetCustomerDirectory).toHaveBeenCalledWith('101999999');
+      expect(mockAuthenticate).toHaveBeenCalledWith('https://receptor.example/recepcion');
+      expect(mockSendElectronicDocument).toHaveBeenCalledWith(
+        '<ECF/>',
+        expect.any(String),
+        'https://receptor.example/recepcion',
+      );
+    });
+
+    it('no rompe la transmisión si el receptor no está en el Directorio FE', async () => {
+      const ecf = {
+        rncEmisor: '101000001',
+        rncComprador: '101999999',
+        encf: 'E310000000004',
+        tipoEcf: 'e-CF_31_v_1_0',
+        montoTotal: 1000,
+        xmlFirmado: '<ECF/>',
+      } as any;
+      mockSendElectronicDocument.mockResolvedValue({ trackId: 'track-xyz', mensajes: [] });
+      mockGetCustomerDirectory.mockResolvedValue([]);
+
+      const result = await service.transmitEcf(ecf, 'tok-123');
+
+      expect(result.uuid).toBe('track-xyz');
+      // Solo la llamada a DGII, ninguna a un buyerHost.
+      expect(mockSendElectronicDocument).toHaveBeenCalledTimes(1);
+    });
+
+    it('no rompe la transmisión si la entrega directa al receptor falla', async () => {
+      const ecf = {
+        rncEmisor: '101000001',
+        rncComprador: '101999999',
+        encf: 'E310000000005',
+        tipoEcf: 'e-CF_31_v_1_0',
+        montoTotal: 1000,
+        xmlFirmado: '<ECF/>',
+      } as any;
+      mockSendElectronicDocument
+        .mockResolvedValueOnce({ trackId: 'track-xyz', mensajes: [] })
+        .mockRejectedValueOnce(new Error('timeout'));
+      mockGetCustomerDirectory.mockResolvedValue([
+        { rnc: '101999999', urlRecepcion: 'https://receptor.example/recepcion', urlAceptacion: '', urlOpcional: '' },
+      ]);
+
+      const result = await service.transmitEcf(ecf, 'tok-123');
+
       expect(result.uuid).toBe('track-xyz');
     });
   });
@@ -287,6 +358,38 @@ describe('DgiiService', () => {
           tipoEcf: 31,
           encf: 'E310000000001',
         }),
+      ).rejects.toThrow(HttpException);
+    });
+  });
+
+  describe('enviarAprobacionComercial', () => {
+    it('modo mock: devuelve una respuesta simulada sin llamar a la DGII', async () => {
+      const result = await service.enviarAprobacionComercial('<ACECF/>', 'archivo.xml');
+
+      expect(result.codigo).toBe('01');
+      expect(mockSendCommercialApproval).not.toHaveBeenCalled();
+    });
+
+    it('modo real: envía el ACECF firmado y devuelve la respuesta de la DGII', async () => {
+      mockCertificateService.usaCertificadoReal.mockResolvedValue(true);
+      mockSendCommercialApproval.mockResolvedValue({
+        codigo: '01',
+        estado: 'Aprobación Comercial Aprobada.',
+        mensaje: [],
+      });
+
+      const result = await service.enviarAprobacionComercial('<ACECF><Signature/></ACECF>', 'archivo.xml');
+
+      expect(mockSendCommercialApproval).toHaveBeenCalledWith('<ACECF><Signature/></ACECF>', 'archivo.xml');
+      expect(result.codigo).toBe('01');
+    });
+
+    it('modo real: lanza HttpException si la DGII no devuelve respuesta', async () => {
+      mockCertificateService.usaCertificadoReal.mockResolvedValue(true);
+      mockSendCommercialApproval.mockResolvedValue(undefined);
+
+      await expect(
+        service.enviarAprobacionComercial('<ACECF/>', 'archivo.xml'),
       ).rejects.toThrow(HttpException);
     });
   });

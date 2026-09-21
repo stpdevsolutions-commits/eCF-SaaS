@@ -2,16 +2,24 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { DgiiController } from './dgii.controller';
 import { DgiiService } from './dgii.service';
+import { DgiiReceptorService } from './dgii-receptor.service';
 import { Empresa } from '../empresa/entities/empresa.entity';
 
 describe('DgiiController', () => {
   let controller: DgiiController;
   let mockDgiiService: any;
+  let mockReceptorService: any;
   let mockEmpresaRepository: any;
 
   beforeEach(async () => {
     mockDgiiService = {
       authenticate: jest.fn(),
+    };
+
+    mockReceptorService = {
+      listar: jest.fn(),
+      obtener: jest.fn(),
+      emitirAprobacionComercial: jest.fn(),
     };
 
     mockEmpresaRepository = {
@@ -22,6 +30,7 @@ describe('DgiiController', () => {
       controllers: [DgiiController],
       providers: [
         { provide: DgiiService, useValue: mockDgiiService },
+        { provide: DgiiReceptorService, useValue: mockReceptorService },
         { provide: getRepositoryToken(Empresa), useValue: mockEmpresaRepository },
       ],
     }).compile();
@@ -45,6 +54,41 @@ describe('DgiiController', () => {
         certificadoDgii: true,
       });
       expect(result).toEqual({ token: 'tok-123', expiresIn: 3600 });
+    });
+  });
+
+  describe('recibidos', () => {
+    it('listarRecibidos delega en el servicio', async () => {
+      mockReceptorService.listar.mockResolvedValue([{ id: '1' }]);
+
+      const result = await controller.listarRecibidos();
+
+      expect(result).toEqual([{ id: '1' }]);
+    });
+
+    it('obtenerRecibido delega en el servicio con el id', async () => {
+      mockReceptorService.obtener.mockResolvedValue({ id: 'rec-1' });
+
+      const result = await controller.obtenerRecibido('rec-1');
+
+      expect(mockReceptorService.obtener).toHaveBeenCalledWith('rec-1');
+      expect(result).toEqual({ id: 'rec-1' });
+    });
+
+    it('emitirAprobacionComercial delega en el servicio con estado y motivo', async () => {
+      mockReceptorService.emitirAprobacionComercial.mockResolvedValue({ id: 'rec-1', aprobacionComercial: 'rechazado' });
+
+      const result = await controller.emitirAprobacionComercial('rec-1', {
+        estado: 'rechazado',
+        detalleMotivoRechazo: 'motivo',
+      });
+
+      expect(mockReceptorService.emitirAprobacionComercial).toHaveBeenCalledWith(
+        'rec-1',
+        'rechazado',
+        'motivo',
+      );
+      expect(result).toEqual({ id: 'rec-1', aprobacionComercial: 'rechazado' });
     });
   });
 });
