@@ -29,6 +29,7 @@ import { Empresa } from '../empresa/entities/empresa.entity';
 import { Ecf } from '../ecf/entities/ecf.entity';
 import { LineaEcf } from '../ecf/entities/linea-ecf.entity';
 import { NcfSequence } from '../ecf/entities/ncf-sequence.entity';
+import { EcfRecibido } from '../ecf/entities/ecf-recibido.entity';
 
 dotenv.config();
 
@@ -40,7 +41,7 @@ export const AppDataSource = new DataSource({
   password: process.env.DATABASE_PASSWORD || 'postgres',
   database: process.env.DATABASE_NAME || 'ecf_saas',
   // TODAS las entidades del proyecto (mantener sincronizado al agregar nuevas)
-  entities: [User, Empresa, Ecf, LineaEcf, NcfSequence],
+  entities: [User, Empresa, Ecf, LineaEcf, NcfSequence, EcfRecibido],
   migrations: ['src/database/migrations/*.ts'],
   synchronize: false,
   logging: false,

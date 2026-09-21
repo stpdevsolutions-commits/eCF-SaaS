@@ -1,7 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
-import { json } from 'express';
+import { json, text } from 'express';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
@@ -12,6 +12,10 @@ async function bootstrap() {
   // El límite por defecto de Express (100kb) rechaza el logo de la empresa
   // (imagen en base64 dentro del body JSON de PATCH /empresa).
   app.use(json({ limit: '5mb' }));
+  // Los webhooks de Recepción/Aprobación Comercial de la DGII (dgii/webhook/*)
+  // pueden llegar como XML plano en el cuerpo (no JSON) — Express no lo
+  // parsea por defecto, así que req.body queda como Buffer/undefined sin esto.
+  app.use(text({ type: ['application/xml', 'text/xml'], limit: '5mb' }));
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
   const corsOrigins = (process.env.CORS_ORIGIN || 'http://localhost:3005')
     .split(',')

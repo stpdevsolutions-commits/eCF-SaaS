@@ -146,6 +146,24 @@ export class Ecf {
   xmlValidacion?: string;
 
   /**
+   * Aprobación o Rechazo Comercial que el comprador emitió sobre este e-CF,
+   * recibida vía la "URL Aprobación Comercial" del Directorio FE (Informe
+   * Técnico e-CF v1.0, secciones 4.4 y 8) — ver DgiiReceptorService.
+   */
+  @Column({
+    type: 'enum',
+    enum: ['pendiente', 'aceptado', 'rechazado'],
+    default: 'pendiente',
+  })
+  aprobacionComercial!: string;
+
+  @Column({ type: 'text', nullable: true })
+  detalleMotivoRechazoAprobacion?: string;
+
+  @Column({ type: 'timestamp', nullable: true })
+  fechaHoraAprobacionComercial?: Date;
+
+  /**
    * Empresa emisora: los e-CF se comparten entre todos los usuarios de la
    * misma empresa (scoping de todos los queries).
    */
