@@ -9,7 +9,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import NuevaEcfPage from '@/app/ecf/nueva/page';
-import { createEcf } from '@/lib/api';
+import { buscarRnc, createEcf } from '@/lib/api';
 
 const push = jest.fn();
 const replace = jest.fn();
@@ -22,14 +22,19 @@ jest.mock('next/navigation', () => ({
 
 jest.mock('@/lib/api', () => ({
   createEcf: jest.fn(),
+  buscarRnc: jest.fn(),
 }));
 
 const createEcfMock = createEcf as jest.Mock;
+const buscarRncMock = buscarRnc as jest.Mock;
 
 beforeEach(() => {
   localStorage.clear();
   // AuthGuard requiere token para renderizar el contenido
   localStorage.setItem('ecf_token', 'token-test');
+  // Por defecto "no encontrado" — así el blur del campo RNC no autocompleta
+  // nada y no interfiere con los valores que cada test escribe a mano.
+  buscarRncMock.mockResolvedValue({ found: false, rnc: '' });
 });
 
 // Orden de los <select> en el formulario: Tipo e-CF, Tipo de Pago, Tipo de
@@ -297,6 +302,42 @@ describe('NuevaEcfPage — submit', () => {
     });
     const dto = createEcfMock.mock.calls[0][0];
     expect(dto.rncComprador).toBe('');
+  });
+
+  it('al salir del campo RNC autocompleta la razón social si la DGII lo encuentra', async () => {
+    const user = userEvent.setup();
+    buscarRncMock.mockResolvedValueOnce({
+      found: true,
+      rnc: '132943058',
+      razonSocial: 'SOLUCIONES TECNICAS PROFESIONALES STP SRL',
+    });
+    await renderPage();
+
+    await user.type(screen.getByPlaceholderText('101-98765-4'), '132943058');
+    await user.tab(); // dispara el blur
+
+    expect(await screen.findByText(/SOLUCIONES TECNICAS PROFESIONALES STP SRL/)).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Empresa Compradora, S.A.')).toHaveValue(
+      'SOLUCIONES TECNICAS PROFESIONALES STP SRL',
+    );
+    expect(buscarRncMock).toHaveBeenCalledWith('132943058');
+  });
+
+  it('no pisa la razón social si el usuario ya escribió una', async () => {
+    const user = userEvent.setup();
+    buscarRncMock.mockResolvedValueOnce({
+      found: true,
+      rnc: '132943058',
+      razonSocial: 'SOLUCIONES TECNICAS PROFESIONALES STP SRL',
+    });
+    await renderPage();
+
+    await user.type(screen.getByPlaceholderText('Empresa Compradora, S.A.'), 'Mi Cliente SRL');
+    await user.type(screen.getByPlaceholderText('101-98765-4'), '132943058');
+    await user.tab();
+
+    await screen.findByText(/SOLUCIONES TECNICAS PROFESIONALES STP SRL/);
+    expect(screen.getByPlaceholderText('Empresa Compradora, S.A.')).toHaveValue('Mi Cliente SRL');
   });
 
   it('muestra el error del backend si createEcf falla', async () => {

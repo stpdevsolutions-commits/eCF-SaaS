@@ -203,3 +203,19 @@ export interface EcfRecibido {
   aprobacionComercial: AprobacionComercial;
   createdAt: string;
 }
+
+// ── Consulta RNC (padrón público DGII) ──────────────────────────────────────
+
+export interface RncLookupResult {
+  found: boolean;
+  rnc: string;
+  mensaje?: string;
+  razonSocial?: string;
+  nombreComercial?: string;
+  categoria?: string;
+  regimenPago?: string;
+  estado?: string;
+  actividadEconomica?: string;
+  administracionLocal?: string;
+  esFacturadorElectronico?: boolean;
+}

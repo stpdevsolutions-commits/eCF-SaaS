@@ -2,6 +2,7 @@ import {
   CreateEcfDto,
   Ecf,
   EcfRecibido,
+  RncLookupResult,
   Empresa,
   EmpresaResponse,
   LoginResponse,
@@ -311,6 +312,15 @@ export async function authenticateDgii(
     body: JSON.stringify({ rncEmisor, usuario, clave }),
   });
   return handleResponse(res);
+}
+
+// ── Consulta RNC (padrón público DGII) ───────────────────────────────────────
+
+export async function buscarRnc(rnc: string): Promise<RncLookupResult> {
+  const res = await fetch(`${API_URL}/api/rnc/${encodeURIComponent(rnc)}`, {
+    headers: authHeaders(),
+  });
+  return handleResponse<RncLookupResult>(res);
 }
 
 // ── e-CF Recibidos (rol receptor) ───────────────────────────────────────────

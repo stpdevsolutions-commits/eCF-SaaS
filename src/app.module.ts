@@ -12,6 +12,7 @@ import { EmpresaModule } from './empresa/empresa.module';
 import { EcfModule } from './ecf/ecf.module';
 import { ValidationModule } from './validation/validation.module';
 import { DgiiModule } from './dgii/dgii.module';
+import { RncLookupModule } from './rnc-lookup/rnc-lookup.module';
 import { User } from './auth/entities/user.entity';
 import { Ecf } from './ecf/entities/ecf.entity';
 import { LineaEcf } from './ecf/entities/linea-ecf.entity';
@@ -87,6 +88,7 @@ import { LineaEcf } from './ecf/entities/linea-ecf.entity';
     EcfModule,
     ValidationModule,
     DgiiModule,
+    RncLookupModule,
   ],
   controllers: [AppController],
   providers: [

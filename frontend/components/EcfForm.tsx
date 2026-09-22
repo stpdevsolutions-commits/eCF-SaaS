@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { createEcf, updateEcf } from '@/lib/api';
+import { buscarRnc, createEcf, updateEcf } from '@/lib/api';
 import { CreateLineaEcfDto, Ecf } from '@/lib/types';
 import {
   BIEN_O_SERVICIO,
@@ -116,6 +116,37 @@ export default function EcfForm({ modo, ecfExistente }: EcfFormProps) {
     ecfExistente?.idExtranjeroComprador ?? '',
   );
   const [nombreComprador, setNombreComprador] = useState(ecfExistente?.nombreComprador ?? '');
+  const [buscandoRnc, setBuscandoRnc] = useState(false);
+  const [avisoRnc, setAvisoRnc] = useState<{ tipo: 'ok' | 'info'; texto: string } | null>(null);
+
+  // Al salir del campo RNC/Cédula, busca la razón social en el padrón
+  // público de la DGII (mismo enfoque que ya usa FiscoRD en producción) y
+  // la autocompleta — solo si el usuario todavía no escribió un nombre, para
+  // no pisarle algo que ya puso a mano.
+  async function handleBlurRnc() {
+    const rncLimpio = rncComprador.replace(/\D/g, '');
+    if (rncLimpio.length < 9 || rncLimpio.length > 11) {
+      setAvisoRnc(null);
+      return;
+    }
+    setBuscandoRnc(true);
+    setAvisoRnc(null);
+    try {
+      const resultado = await buscarRnc(rncLimpio);
+      if (resultado.found && resultado.razonSocial) {
+        if (!nombreComprador.trim()) {
+          setNombreComprador(resultado.razonSocial);
+        }
+        setAvisoRnc({ tipo: 'ok', texto: resultado.razonSocial });
+      } else {
+        setAvisoRnc({ tipo: 'info', texto: resultado.mensaje || 'No se encontró en el padrón de la DGII' });
+      }
+    } catch {
+      setAvisoRnc(null);
+    } finally {
+      setBuscandoRnc(false);
+    }
+  }
   const [telefonoComprador, setTelefonoComprador] = useState(ecfExistente?.telefonoComprador ?? '');
   const [correoComprador, setCorreoComprador] = useState(ecfExistente?.correoComprador ?? '');
   const [direccionComprador, setDireccionComprador] = useState(
@@ -352,12 +383,25 @@ export default function EcfForm({ modo, ecfExistente }: EcfFormProps) {
               type="text"
               required={!esConsumoFinal}
               value={rncComprador}
-              onChange={(e) => setRncComprador(e.target.value)}
+              onChange={(e) => {
+                setRncComprador(e.target.value);
+                setAvisoRnc(null);
+              }}
+              onBlur={handleBlurRnc}
               placeholder={esConsumoFinal ? 'Déjalo en blanco para consumidor final' : '101-98765-4'}
               className="input-field"
               maxLength={20}
             />
-            {esConsumoFinal && (
+            {buscandoRnc && (
+              <p className="text-xs text-gray-400 mt-1">Buscando en la DGII…</p>
+            )}
+            {!buscandoRnc && avisoRnc?.tipo === 'ok' && (
+              <p className="text-xs text-green-600 mt-1">✓ {avisoRnc.texto}</p>
+            )}
+            {!buscandoRnc && avisoRnc?.tipo === 'info' && (
+              <p className="text-xs text-amber-600 mt-1">{avisoRnc.texto}</p>
+            )}
+            {esConsumoFinal && !avisoRnc && (
               <p className="text-xs text-gray-400 mt-1">
                 Opcional en Factura de Consumo — véndele a un consumidor final sin RNC/Cédula.
               </p>
