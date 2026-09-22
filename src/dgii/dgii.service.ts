@@ -358,6 +358,11 @@ export class DgiiService {
    * el e-CF ya quedó válido ante la DGII independientemente de este paso.
    */
   private async intentarEntregaDirecta(ecf: Ecf, client: ECF, fileName: string): Promise<void> {
+    // Sin RNC comprador (venta a consumidor final, e-CF_32) no hay a quién
+    // buscar en el Directorio FE — el e-CF queda solo transmitido a la DGII.
+    if (!ecf.rncComprador) {
+      return;
+    }
     try {
       const directorio = await client.getCustomerDirectory(ecf.rncComprador);
       const receptor = directorio?.[0];

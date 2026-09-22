@@ -36,7 +36,8 @@ export interface Ecf {
   tipoPago: number;
   tipoIngresos: string;
   terminoPago?: string;
-  rncComprador: string;
+  /** Opcional solo para e-CF_32 (Factura de Consumo) — venta a consumidor final sin RNC/Cédula. */
+  rncComprador?: string;
   idExtranjeroComprador?: string;
   nombreComprador: string;
   telefonoComprador?: string;
@@ -59,6 +60,8 @@ export interface Ecf {
   qrUrl?: string;
   xmlFirmado?: string;
   xmlValidacion?: string;
+  /** Momento exacto de la firma XMLDSig (mismo instante cubierto por la firma). */
+  fechaHoraFirma?: string;
   lineas?: LineaEcf[];
   createdAt: string;
   updatedAt: string;
@@ -83,7 +86,8 @@ export interface CreateEcfDto {
   tipoPago?: number;
   tipoIngresos?: string;
   terminoPago?: string;
-  rncComprador: string;
+  /** Opcional solo para e-CF_32 (Factura de Consumo) — venta a consumidor final sin RNC/Cédula. */
+  rncComprador?: string;
   idExtranjeroComprador?: string;
   nombreComprador: string;
   telefonoComprador?: string;

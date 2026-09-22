@@ -62,8 +62,14 @@ export class Ecf {
   @Column({ type: 'varchar', length: 15, nullable: true })
   terminoPago?: string;
 
-  @Column({ type: 'varchar', length: 20 })
-  rncComprador!: string;
+  /**
+   * Opcional SOLO para e-CF_32 (Factura de Consumo) — venta a consumidor
+   * final sin RNC/Cédula. El XSD de la DGII define RNCComprador con
+   * minOccurs="0" únicamente para ese tipo; para los demás sigue exigido
+   * (ver XsdValidatorService.validateEcf).
+   */
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  rncComprador?: string;
 
   @Column({ type: 'varchar', length: 20, nullable: true })
   idExtranjeroComprador?: string;
@@ -144,6 +150,10 @@ export class Ecf {
 
   @Column({ type: 'text', nullable: true })
   xmlValidacion?: string;
+
+  /** Momento exacto de la firma XMLDSig (mismo instante usado para el QR). */
+  @Column({ type: 'timestamp', nullable: true })
+  fechaHoraFirma?: Date;
 
   /**
    * Aprobación o Rechazo Comercial que el comprador emitió sobre este e-CF,

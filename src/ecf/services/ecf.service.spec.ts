@@ -212,6 +212,28 @@ describe('EcfService', () => {
         }),
       );
     });
+
+    it('crea un e-CF_32 sin RNC comprador (venta a consumidor final)', async () => {
+      const createDto = {
+        tipoEcf: 'e-CF_32_v_1_0',
+        nombreComprador: 'Consumidor Final',
+        lineas: [{ descripcion: 'Producto A', cantidad: 1, precioUnitario: 1000 }],
+      };
+
+      mockEcfRepository.create.mockImplementation((data: any) => data);
+      mockEcfRepository.save.mockImplementation((data: any) =>
+        Promise.resolve({ id: '1', ...data }),
+      );
+      mockLineaRepository.create.mockReturnValue({});
+      mockLineaRepository.save.mockResolvedValue({});
+
+      const result = await service.create(createDto as any, 'user-id', 'empresa-id');
+
+      expect(mockEcfRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({ rncComprador: undefined, nombreComprador: 'Consumidor Final' }),
+      );
+      expect(result).toBeDefined();
+    });
   });
 
   describe('validateEcf', () => {
@@ -383,6 +405,32 @@ describe('EcfService', () => {
       expect(ecf2.encf).toBe('E310000000002');
       expect(ecf1.encf).not.toBe(ecf2.encf);
     });
+
+    it('al firmar extrae fechaHoraFirma del <FechaHoraFirma> embebido en el XML', async () => {
+      const ecf = baseEcf({ estado: 'validated', encf: 'E310000000007' });
+      mockEcfRepository.findOne.mockResolvedValue(ecf);
+      mockXmlService.generateXml.mockReturnValue(
+        '<ECF><FechaHoraFirma>22-09-2026 10:30:45</FechaHoraFirma></ECF>',
+      );
+
+      const result = await service.signEcf('1', 'empresa-id');
+
+      expect(ecf.fechaHoraFirma).toEqual(new Date(2026, 8, 22, 10, 30, 45));
+      expect(result.fechaHoraFirma).toEqual(new Date(2026, 8, 22, 10, 30, 45));
+    });
+
+    it('al firmar deja fechaHoraFirma indefinida si el XML no tiene el tag', async () => {
+      const ecf = baseEcf({
+        estado: 'validated',
+        encf: 'E310000000007',
+        xmlValidacion: '<ECF>sin fecha de firma</ECF>',
+      });
+      mockEcfRepository.findOne.mockResolvedValue(ecf);
+
+      await service.signEcf('1', 'empresa-id');
+
+      expect(ecf.fechaHoraFirma).toBeUndefined();
+    });
   });
 
   describe('create — rechazo por validación', () => {
@@ -543,6 +591,29 @@ describe('EcfService', () => {
       const csv = await service.exportCsv('empresa-id');
 
       expect(csv.split('\n')).toHaveLength(1);
+    });
+
+    it('deja la columna RNC Comprador vacía para un e-CF_32 sin RNC', async () => {
+      const comprobantes = [
+        {
+          tipoEcf: 'e-CF_32_v_1_0',
+          uuid: null,
+          rncComprador: undefined,
+          nombreComprador: 'Consumidor Final',
+          estado: 'signed',
+          montoTotal: '500.00',
+          montoITBIS: '0.00',
+          montoItbisRetenido: '0.00',
+          montoRentaRetenido: '0.00',
+          fechaEmision: new Date('2026-01-01T00:00:00.000Z'),
+        },
+      ];
+      mockEcfRepository.createQueryBuilder.mockReturnValue(mockQueryBuilder(comprobantes));
+
+      const csv = await service.exportCsv('empresa-id');
+      const [, fila] = csv.split('\n');
+
+      expect(fila.split(',')[2]).toBe('');
     });
   });
 

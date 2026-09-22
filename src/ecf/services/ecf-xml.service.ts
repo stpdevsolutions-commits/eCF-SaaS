@@ -67,7 +67,11 @@ export class EcfXmlService {
       `      <FechaEmision>${fechaEmision}</FechaEmision>`,
       '    </Emisor>',
       '    <Comprador>',
-      `      <RNCComprador>${this.esc(ecf.rncComprador)}</RNCComprador>`,
+      // RNCComprador es minOccurs="0" en el XSD SOLO para e-CF_32 (venta a
+      // consumidor final sin RNC/Cédula) — se omite el tag por completo si
+      // no hay valor. Para los demás tipos, XsdValidatorService.validateEcf
+      // ya exige que venga presente antes de llegar aquí.
+      ...(ecf.rncComprador ? [`      <RNCComprador>${this.esc(ecf.rncComprador)}</RNCComprador>`] : []),
       ...(ecf.idExtranjeroComprador ? [`      <IdentificadorExtranjero>${this.esc(ecf.idExtranjeroComprador)}</IdentificadorExtranjero>`] : []),
       `      <RazonSocialComprador>${this.esc(ecf.nombreComprador)}</RazonSocialComprador>`,
       ...(ecf.correoComprador ? [`      <CorreoComprador>${this.esc(ecf.correoComprador)}</CorreoComprador>`] : []),

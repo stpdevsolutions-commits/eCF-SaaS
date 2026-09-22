@@ -105,6 +105,10 @@ export default function EcfForm({ modo, ecfExistente }: EcfFormProps) {
 
   const soportaRetencion = TIPOS_CON_RETENCION.includes(tipoEcf);
   const retencionRequerida = TIPOS_RETENCION_REQUERIDA.includes(tipoEcf);
+  // e-CF_32 (Factura de Consumo) es el único tipo cuyo XSD de la DGII define
+  // RNCComprador con minOccurs="0" — permite vender a un consumidor final
+  // sin RNC/Cédula. Para los demás tipos sigue siendo obligatorio.
+  const esConsumoFinal = tipoEcf === 'e-CF_32_v_1_0';
 
   // Comprador
   const [rncComprador, setRncComprador] = useState(ecfExistente?.rncComprador ?? '');
@@ -343,16 +347,21 @@ export default function EcfForm({ modo, ecfExistente }: EcfFormProps) {
         </h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label className="label">RNC / Cédula *</label>
+            <label className="label">RNC / Cédula{esConsumoFinal ? '' : ' *'}</label>
             <input
               type="text"
-              required
+              required={!esConsumoFinal}
               value={rncComprador}
               onChange={(e) => setRncComprador(e.target.value)}
-              placeholder="101-98765-4"
+              placeholder={esConsumoFinal ? 'Déjalo en blanco para consumidor final' : '101-98765-4'}
               className="input-field"
               maxLength={20}
             />
+            {esConsumoFinal && (
+              <p className="text-xs text-gray-400 mt-1">
+                Opcional en Factura de Consumo — véndele a un consumidor final sin RNC/Cédula.
+              </p>
+            )}
           </div>
           <div>
             <label className="label">ID Extranjero</label>

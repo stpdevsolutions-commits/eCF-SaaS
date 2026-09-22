@@ -75,8 +75,15 @@ export class CreateEcfDto {
   @IsOptional()
   terminoPago?: string;
 
+  /**
+   * Opcional SOLO para e-CF_32 (Factura de Consumo) — el XSD de la DGII
+   * define RNCComprador con minOccurs="0" únicamente para ese tipo (venta a
+   * consumidor final sin RNC/Cédula). Para los demás tipos sigue siendo
+   * obligatorio; la validación real por tipo vive en XsdValidatorService.validateEcf.
+   */
   @IsString()
-  rncComprador!: string;
+  @IsOptional()
+  rncComprador?: string;
 
   @IsString()
   @IsOptional()

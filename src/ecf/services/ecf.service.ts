@@ -411,7 +411,7 @@ export class EcfService {
     const filas = comprobantes.map((e) => [
       e.tipoEcf,
       e.uuid ?? '',
-      e.rncComprador,
+      e.rncComprador ?? '',
       e.nombreComprador,
       e.estado,
       Number(e.montoTotal).toFixed(2),
@@ -462,6 +462,10 @@ export class EcfService {
 
     ecf.xmlFirmado = xmlFirmado;
     ecf.estado = 'signed';
+    // Se extrae del propio XML en vez de llamar a `new Date()` de nuevo, para
+    // que quede exactamente el mismo instante que <FechaHoraFirma> — el que
+    // efectivamente cubre la firma digital.
+    ecf.fechaHoraFirma = this.extraerFechaFirma(xmlSinFirmar);
 
     // Código de seguridad + QR de representación impresa: se derivan
     // localmente de la firma, no requieren transmisión ni credenciales DGII.
@@ -476,9 +480,26 @@ export class EcfService {
       xmlFirmado,
       codigoSeguridadDgii: ecf.codigoSeguridadDgii,
       qrUrl: ecf.qrUrl,
+      fechaHoraFirma: ecf.fechaHoraFirma,
       mensaje: 'Comprobante firmado exitosamente con XMLDSig (RSA-2048 / SHA-256)',
       advertencias: validation.warnings,
     };
+  }
+
+  /**
+   * Extrae el valor de <FechaHoraFirma>DD-MM-YYYY HH:MM:SS</FechaHoraFirma>
+   * embebido por EcfXmlService.generateXml al momento de armar el XML (antes
+   * de firmar). Es el mismo timestamp que queda cubierto por la firma XMLDSig.
+   */
+  private extraerFechaFirma(xml: string): Date | undefined {
+    const match = xml.match(
+      /<FechaHoraFirma>(\d{2})-(\d{2})-(\d{4}) (\d{2}):(\d{2}):(\d{2})<\/FechaHoraFirma>/,
+    );
+    if (!match) {
+      return undefined;
+    }
+    const [, dd, mm, yyyy, hh, mi, ss] = match;
+    return new Date(Number(yyyy), Number(mm) - 1, Number(dd), Number(hh), Number(mi), Number(ss));
   }
 
   /**
@@ -498,17 +519,18 @@ export class EcfService {
         (this.configService.get<string>('DGII_ENVIRONMENT') as ENVIRONMENT) ||
         ENVIRONMENT.DEV;
       const montoTotal = Number(ecf.montoTotal);
+      const fechaFirmaParaQr = ecf.fechaHoraFirma ?? new Date();
 
       ecf.qrUrl =
         ecf.tipoEcf === 'e-CF_32_v_1_0'
           ? generateFcQRCodeURL(ecf.rncEmisor, ecf.encf!, montoTotal, codigoSeguridad, environment)
           : generateEcfQRCodeURL(
               ecf.rncEmisor,
-              ecf.rncComprador,
+              ecf.rncComprador ?? '',
               ecf.encf!,
               montoTotal.toFixed(2),
               this.toFechaDgii(ecf.fechaEmision),
-              this.toFechaDgii(new Date()),
+              this.toFechaDgii(fechaFirmaParaQr),
               codigoSeguridad,
               environment,
             );

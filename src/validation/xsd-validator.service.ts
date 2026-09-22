@@ -6,6 +6,9 @@ export interface ValidationResult {
   warnings: string[];
 }
 
+/** e-CF_32 (Factura de Consumo) es el único tipo cuyo XSD define RNCComprador con minOccurs="0" (venta a consumidor final sin RNC/Cédula). */
+const TIPO_SIN_RNC_COMPRADOR_OBLIGATORIO = 'e-CF_32_v_1_0';
+
 /**
  * Servicio de validación de comprobantes fiscales electrónicos (e-CF).
  *
@@ -27,7 +30,14 @@ export class XsdValidatorService {
       errors.push('RNC Emisor inválido (debe ser 9-11 dígitos)');
     }
 
-    if (!data['rncComprador'] || !/^\d{9,11}$/.test(String(data['rncComprador']))) {
+    // RNC Comprador: obligatorio para todos los tipos EXCEPTO e-CF_32 (Factura
+    // de Consumo), donde el XSD lo define con minOccurs="0" — permite vender
+    // a un consumidor final sin RNC/Cédula. Si viene presente en e-CF_32,
+    // igual debe tener formato válido.
+    const esConsumo = data['tipoEcf'] === TIPO_SIN_RNC_COMPRADOR_OBLIGATORIO;
+    if (!esConsumo && (!data['rncComprador'] || !/^\d{9,11}$/.test(String(data['rncComprador'])))) {
+      errors.push('RNC Comprador inválido (debe ser 9-11 dígitos)');
+    } else if (esConsumo && data['rncComprador'] && !/^\d{9,11}$/.test(String(data['rncComprador']))) {
       errors.push('RNC Comprador inválido (debe ser 9-11 dígitos)');
     }
 
@@ -120,6 +130,7 @@ export class XsdValidatorService {
     }
 
     // ── 2. Elementos requeridos (minOccurs=1 en el XSD) ──────────────────────
+    // RNCComprador NO va aquí: es minOccurs="0" para e-CF_32 (ver bloque aparte más abajo).
     const required: [string, string][] = [
       ['<Encabezado>', 'Encabezado'],
       ['<Version>', 'Version'],
@@ -134,7 +145,6 @@ export class XsdValidatorService {
       ['<DireccionEmisor>', 'DireccionEmisor'],
       ['<FechaEmision>', 'FechaEmision'],
       ['<Comprador>', 'Comprador'],
-      ['<RNCComprador>', 'RNCComprador'],
       ['<RazonSocialComprador>', 'RazonSocialComprador'],
       ['<Totales>', 'Totales'],
       ['<MontoTotal>', 'MontoTotal'],
@@ -154,6 +164,11 @@ export class XsdValidatorService {
       if (!xml.includes(tag)) {
         errors.push(`Elemento requerido ausente: <${name}>`);
       }
+    }
+
+    // RNCComprador: requerido para todos los tipos excepto e-CF_32.
+    if (tipoEcf !== TIPO_SIN_RNC_COMPRADOR_OBLIGATORIO && !xml.includes('<RNCComprador>')) {
+      errors.push('Elemento requerido ausente: <RNCComprador>');
     }
 
     // ── 3. Formato eNCF (13 alfanuméricos: E + tipo(2) + seq(10)) ─────────────

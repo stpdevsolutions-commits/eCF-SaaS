@@ -243,7 +243,7 @@ describe('NuevaEcfPage — submit', () => {
     await renderPage();
 
     await user.selectOptions(getTipoSelect(), 'e-CF_32_v_1_0');
-    await fillComprador(user);
+    await user.type(screen.getByPlaceholderText('Empresa Compradora, S.A.'), 'Cliente SA');
     await user.type(
       screen.getByPlaceholderText('Descripción del bien o servicio'),
       'Venta al consumidor',
@@ -269,6 +269,34 @@ describe('NuevaEcfPage — submit', () => {
         descuentoLinea: 0,
       },
     ]);
+  });
+
+  it('permite crear un e-CF_32 sin RNC comprador (venta a consumidor final)', async () => {
+    const user = userEvent.setup();
+    createEcfMock.mockResolvedValueOnce({ id: 'ecf-nuevo-3' });
+    await renderPage();
+
+    await user.selectOptions(getTipoSelect(), 'e-CF_32_v_1_0');
+    expect(screen.queryByPlaceholderText('101-98765-4')).not.toBeInTheDocument();
+    expect(
+      screen.getByPlaceholderText('Déjalo en blanco para consumidor final'),
+    ).toBeInTheDocument();
+
+    await user.type(screen.getByPlaceholderText('Empresa Compradora, S.A.'), 'Consumidor Final');
+    await user.type(
+      screen.getByPlaceholderText('Descripción del bien o servicio'),
+      'Venta al consumidor',
+    );
+    const spinbuttons = screen.getAllByRole('spinbutton');
+    await user.type(spinbuttons[1], '350.50');
+
+    await user.click(screen.getByRole('button', { name: 'Crear Comprobante' }));
+
+    await waitFor(() => {
+      expect(createEcfMock).toHaveBeenCalledTimes(1);
+    });
+    const dto = createEcfMock.mock.calls[0][0];
+    expect(dto.rncComprador).toBe('');
   });
 
   it('muestra el error del backend si createEcf falla', async () => {

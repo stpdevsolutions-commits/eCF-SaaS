@@ -431,6 +431,10 @@ function EcfDetailContent() {
               <dl className="space-y-3">
                 <InfoRow label="Fecha de Emisión" value={new Date(ecf.fechaEmision).toLocaleString('es-DO')} />
                 <InfoRow label="Moneda" value={ecf.moneda} />
+                <InfoRow
+                  label="Fecha de Firma"
+                  value={ecf.fechaHoraFirma ? new Date(ecf.fechaHoraFirma).toLocaleString('es-DO') : undefined}
+                />
                 <InfoRow label="UUID DGII" value={ecf.uuid} />
                 <InfoRow label="Código de Seguridad" value={ecf.codigoSeguridadDgii} />
               </dl>
