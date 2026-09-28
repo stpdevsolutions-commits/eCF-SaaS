@@ -21,11 +21,11 @@ import { Response } from 'express';
 import { EcfService } from '../services/ecf.service';
 import { CreateEcfDto } from '../dto/create-ecf.dto';
 import { UpdateEcfDto } from '../dto/update-ecf.dto';
-import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { ApiKeyOrJwtGuard } from '../../common/guards/api-key-or-jwt.guard';
 
 @ApiTags('Comprobantes Fiscales')
 @Controller('ecf')
-@UseGuards(JwtAuthGuard)
+@UseGuards(ApiKeyOrJwtGuard)
 @ApiBearerAuth()
 export class EcfController {
   constructor(private ecfService: EcfService) {}
