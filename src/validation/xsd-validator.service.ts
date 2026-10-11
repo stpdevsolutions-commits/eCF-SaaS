@@ -90,6 +90,14 @@ export class XsdValidatorService {
       });
     }
 
+    // Notas de crédito/débito: el XSD exige <InformacionReferencia> (comprobante que modifican).
+    if (data['tipoEcf'] === 'e-CF_33_v_1_0' || data['tipoEcf'] === 'e-CF_34_v_1_0') {
+      const ref = data['referencia'] as Record<string, unknown> | undefined;
+      if (!ref || !ref['ncfModificado'] || !ref['fechaNcfModificado'] || !ref['codigoModificacion']) {
+        errors.push('Las notas de crédito/débito requieren la referencia al comprobante que modifican');
+      }
+    }
+
     if (!data['nombreEmisor']) {
       errors.push('Nombre Emisor requerido');
     }

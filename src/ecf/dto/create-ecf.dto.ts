@@ -6,6 +6,8 @@ import {
   IsIn,
   IsBoolean,
   IsDateString,
+  Matches,
+  MaxLength,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -53,6 +55,26 @@ export class CreateLineaEcfDto {
   montoIsrRetenido?: number;
 }
 
+/** Comprobante que modifica una nota de crédito o débito (e-CF 33/34). */
+export class ReferenciaEcfDto {
+  /** eNCF o NCF modificado (11 a 19 caracteres alfanuméricos). */
+  @IsString()
+  @Matches(/^[A-Za-z0-9]{11,19}$/)
+  ncfModificado!: string;
+
+  @IsDateString()
+  fechaNcfModificado!: string;
+
+  // 1 anula · 2 corrige texto · 3 corrige montos · 4 reemplaza contingencia · 5 referencia factura de consumo
+  @IsIn([1, 2, 3, 4, 5])
+  codigoModificacion!: number;
+
+  @IsString()
+  @MaxLength(90)
+  @IsOptional()
+  razonModificacion?: string;
+}
+
 export class CreateEcfDto {
   @IsString()
   tipoEcf!: string;
@@ -71,9 +93,22 @@ export class CreateEcfDto {
   @IsOptional()
   tipoIngresos?: string = '01';
 
+  // Solo letras, números y espacios, hasta 15 caracteres (XSD TerminoPagoValidationType).
   @IsString()
+  @Matches(/^[\s\d\w]{1,15}$/)
   @IsOptional()
   terminoPago?: string;
+
+  /** Fecha límite de pago de una venta a crédito (tipoPago 2). */
+  @IsDateString()
+  @IsOptional()
+  fechaLimitePago?: string;
+
+  /** Obligatoria en las notas de crédito/débito (e-CF 33/34). */
+  @ValidateNested()
+  @Type(() => ReferenciaEcfDto)
+  @IsOptional()
+  referencia?: ReferenciaEcfDto;
 
   /**
    * Opcional SOLO para e-CF_32 (Factura de Consumo) — el XSD de la DGII

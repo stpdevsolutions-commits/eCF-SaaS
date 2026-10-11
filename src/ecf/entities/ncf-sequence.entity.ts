@@ -25,4 +25,8 @@ export class NcfSequence {
   // bigint: el driver de Postgres lo devuelve como string
   @Column({ name: 'ultima_secuencia', type: 'bigint', default: 0 })
   ultimaSecuencia!: string;
+
+  /** Vencimiento de la secuencia autorizada por la DGII ('YYYY-MM-DD'); lo exige el XSD de varios tipos. */
+  @Column({ name: 'fecha_vencimiento', type: 'date', nullable: true })
+  fechaVencimiento?: string | null;
 }

@@ -1,4 +1,4 @@
-import { IsInt, Min, Max } from 'class-validator';
+import { IsDateString, IsInt, IsOptional, Min, Max } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class SetSecuenciaDto {
@@ -14,4 +14,13 @@ export class SetSecuenciaDto {
   @Min(0)
   @Max(9_999_999_999)
   ultimaSecuencia!: number;
+
+  @ApiProperty({
+    example: '2027-12-31',
+    required: false,
+    description: 'Vencimiento de la secuencia autorizada por la DGII. El XSD lo exige en los e-CF 31, 33, 41, 43-47.',
+  })
+  @IsOptional()
+  @IsDateString()
+  fechaVencimiento?: string;
 }

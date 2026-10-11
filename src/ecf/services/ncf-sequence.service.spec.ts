@@ -12,6 +12,7 @@ describe('NcfSequenceService', () => {
     mockRepository = {
       query: jest.fn(),
       find: jest.fn(),
+      findOne: jest.fn().mockResolvedValue(null),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -36,12 +37,13 @@ describe('NcfSequenceService', () => {
         tipoEcf: 'e-CF_31_v_1_0',
         ultimaSecuencia: 0,
         proximoEncf: 'E310000000001',
+        fechaVencimiento: null,
       });
     });
 
     it('refleja la última secuencia de las filas existentes', async () => {
       mockRepository.find.mockResolvedValue([
-        { empresaId: 'empresa-1', tipoEcf: 'e-CF_32_v_1_0', ultimaSecuencia: '41' },
+        { empresaId: 'empresa-1', tipoEcf: 'e-CF_32_v_1_0', ultimaSecuencia: '41', fechaVencimiento: '2027-12-31' },
       ]);
 
       const result = await service.listSequences('empresa-1');
@@ -51,6 +53,7 @@ describe('NcfSequenceService', () => {
         tipoEcf: 'e-CF_32_v_1_0',
         ultimaSecuencia: 41,
         proximoEncf: 'E320000000042',
+        fechaVencimiento: '2027-12-31',
       });
       // Los tipos sin fila siguen en 0
       const tipo47 = result.find((s) => s.tipoEcf === 'e-CF_47_v_1_0');
@@ -66,7 +69,7 @@ describe('NcfSequenceService', () => {
 
       expect(mockRepository.query).toHaveBeenCalledWith(
         expect.stringContaining('ON CONFLICT (empresa_id, tipo_ecf)'),
-        ['empresa-1', 'e-CF_31_v_1_0', 500],
+        ['empresa-1', 'e-CF_31_v_1_0', 500, null],
       );
       // La condición anti-reducción vive en el propio UPDATE (atómico)
       expect(mockRepository.query.mock.calls[0][0]).toContain(
@@ -76,7 +79,24 @@ describe('NcfSequenceService', () => {
         tipoEcf: 'e-CF_31_v_1_0',
         ultimaSecuencia: 500,
         proximoEncf: 'E310000000501',
+        fechaVencimiento: null,
       });
+    });
+
+    it('guarda el vencimiento de la secuencia sin pisar el existente cuando no se envía', async () => {
+      mockRepository.query.mockResolvedValue([{ ultima_secuencia: '10' }]);
+      mockRepository.findOne.mockResolvedValue({ fechaVencimiento: '2027-12-31' });
+
+      const result = await service.setSequence('empresa-1', 'e-CF_31_v_1_0', 10, '2027-12-31');
+
+      expect(mockRepository.query).toHaveBeenCalledWith(expect.any(String), ['empresa-1', 'e-CF_31_v_1_0', 10, '2027-12-31']);
+      expect(mockRepository.query.mock.calls[0][0]).toContain('COALESCE(EXCLUDED.fecha_vencimiento, ncf_sequence.fecha_vencimiento)');
+      expect(result.fechaVencimiento).toBe('2027-12-31');
+    });
+
+    it('getFechaVencimiento devuelve null si no hay fila', async () => {
+      mockRepository.findOne.mockResolvedValue(null);
+      expect(await service.getFechaVencimiento('empresa-1', 'e-CF_31_v_1_0')).toBeNull();
     });
 
     it('rechaza con 400 si la secuencia nueva es menor que la actual (no matchea el upsert)', async () => {

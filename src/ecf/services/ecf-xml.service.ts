@@ -20,6 +20,20 @@ export const TIPO_ECF_MAP: Record<string, number> = {
 
 export const SCHEMA_BASEPATH = 'src/validation/schemas';
 
+/**
+ * Tipos cuyo XSD exige <FechaVencimientoSecuencia> en IdDoc (vencimiento de la
+ * secuencia de eNCF autorizada por la DGII). El 32 y el 34 no la llevan.
+ */
+export const TIPOS_CON_VENCIMIENTO_SECUENCIA = new Set([31, 33, 41, 43, 44, 45, 46, 47]);
+
+/** Tipos que modifican otro comprobante y exigen <InformacionReferencia>. */
+export const TIPOS_CON_REFERENCIA = new Set([33, 34]);
+
+export interface OpcionesXml {
+  /** Vencimiento de la secuencia eNCF autorizada (se imprime como DD-MM-YYYY). */
+  fechaVencimientoSecuencia?: Date | string;
+}
+
 @Injectable()
 export class EcfXmlService {
   /**
@@ -30,7 +44,7 @@ export class EcfXmlService {
    *                  Solo se usa como fallback si el ECF aún no tiene `encf` asignado;
    *                  si `ecf.encf` existe, SIEMPRE se reutiliza ese valor.
    */
-  generateXml(ecf: Ecf, secuencia = 1): string {
+  generateXml(ecf: Ecf, secuencia = 1, opciones: OpcionesXml = {}): string {
     const tipoNumerico = TIPO_ECF_MAP[ecf.tipoEcf];
     if (!tipoNumerico) {
       throw new Error(`Tipo ECF no soportado: "${ecf.tipoEcf}". Valores válidos: ${Object.keys(TIPO_ECF_MAP).join(', ')}`);
@@ -45,7 +59,7 @@ export class EcfXmlService {
     const total = Number(ecf.montoTotal);
     const itbis = Number(ecf.montoITBIS);
     const propina = Number(ecf.montoPropinaLegal);
-    const gravado = total - itbis - propina;
+    const totalesIdDoc = this.totalesPorTasa(ecf.lineas ?? []);
 
     const lines: string[] = [
       '<?xml version="1.0" encoding="UTF-8"?>',
@@ -55,8 +69,14 @@ export class EcfXmlService {
       '    <IdDoc>',
       `      <TipoeCF>${tipoNumerico}</TipoeCF>`,
       `      <eNCF>${eNCF}</eNCF>`,
+      // Nota de crédito: 0 si se emite dentro de los 30 días del comprobante que modifica, 1 si pasó más tiempo.
+      ...(tipoNumerico === 34 ? [`      <IndicadorNotaCredito>${this.indicadorNotaCredito(ecf)}</IndicadorNotaCredito>`] : []),
+      ...(TIPOS_CON_VENCIMIENTO_SECUENCIA.has(tipoNumerico)
+        ? [`      <FechaVencimientoSecuencia>${this.fechaVencimiento(opciones, tipoNumerico)}</FechaVencimientoSecuencia>`]
+        : []),
       `      <TipoIngresos>${this.esc(ecf.tipoIngresos)}</TipoIngresos>`,
       `      <TipoPago>${ecf.tipoPago}</TipoPago>`,
+      ...(ecf.fechaLimitePago ? [`      <FechaLimitePago>${this.fechaColumna(ecf.fechaLimitePago)}</FechaLimitePago>`] : []),
       ...(ecf.terminoPago ? [`      <TerminoPago>${this.esc(ecf.terminoPago)}</TerminoPago>`] : []),
       '    </IdDoc>',
       '    <Emisor>',
@@ -84,16 +104,35 @@ export class EcfXmlService {
       '    <Totales>',
     ];
 
-    if (itbis > 0) {
-      // Gravado con ITBIS tasa 1 (18 %)
-      // Orden exigido por el XSD de la DGII dentro de <Totales>: TotalITBIS
-      // (total general) va ANTES que TotalITBIS1 (total por tasa 1).
-      lines.push(`      <MontoGravadoI1>${this.r2(gravado)}</MontoGravadoI1>`);
+    // Totales desglosados por tasa según las líneas: una factura puede mezclar líneas
+    // gravadas (18 %, 16 %), a tasa 0 y exentas. Orden exigido por el XSD de la DGII dentro
+    // de <Totales>: MontoGravadoTotal, MontoGravadoI1..I3, MontoExento, ITBIS1..3 (tasas),
+    // TotalITBIS y TotalITBIS1..3.
+    const t = totalesIdDoc;
+    if (t.hayLineas) {
+      if (t.lineas[1] + t.lineas[2] + t.lineas[3] > 0) {
+        lines.push(`      <MontoGravadoTotal>${this.r2(t.gravadoTotal)}</MontoGravadoTotal>`);
+      }
+      if (t.lineas[1] > 0) lines.push(`      <MontoGravadoI1>${this.r2(t.gravado[1])}</MontoGravadoI1>`);
+      if (t.lineas[2] > 0) lines.push(`      <MontoGravadoI2>${this.r2(t.gravado[2])}</MontoGravadoI2>`);
+      if (t.lineas[3] > 0) lines.push(`      <MontoGravadoI3>${this.r2(t.gravado[3])}</MontoGravadoI3>`);
+      if (t.exento > 0) lines.push(`      <MontoExento>${this.r2(t.exento)}</MontoExento>`);
+      if (t.lineas[1] > 0) lines.push('      <ITBIS1>18</ITBIS1>');
+      if (t.lineas[2] > 0) lines.push('      <ITBIS2>16</ITBIS2>');
+      if (t.lineas[3] > 0) lines.push('      <ITBIS3>0</ITBIS3>');
+      if (t.lineas[1] + t.lineas[2] + t.lineas[3] > 0) {
+        lines.push(`      <TotalITBIS>${this.r2(t.itbis[1] + t.itbis[2] + t.itbis[3])}</TotalITBIS>`);
+        if (t.lineas[1] > 0) lines.push(`      <TotalITBIS1>${this.r2(t.itbis[1])}</TotalITBIS1>`);
+        if (t.lineas[2] > 0) lines.push(`      <TotalITBIS2>${this.r2(t.itbis[2])}</TotalITBIS2>`);
+        if (t.lineas[3] > 0) lines.push(`      <TotalITBIS3>${this.r2(t.itbis[3])}</TotalITBIS3>`);
+      }
+    } else if (itbis > 0) {
+      // Sin líneas (no debería pasar): se conserva el cálculo antiguo, todo a tasa 1.
+      lines.push(`      <MontoGravadoI1>${this.r2(total - itbis - propina)}</MontoGravadoI1>`);
       lines.push('      <ITBIS1>18</ITBIS1>');
       lines.push(`      <TotalITBIS>${this.r2(itbis)}</TotalITBIS>`);
       lines.push(`      <TotalITBIS1>${this.r2(itbis)}</TotalITBIS1>`);
     } else {
-      // Sin ITBIS → monto exento
       lines.push(`      <MontoExento>${this.r2(total - propina)}</MontoExento>`);
     }
 
@@ -158,6 +197,17 @@ export class EcfXmlService {
     });
 
     lines.push('  </DetallesItems>');
+    if (TIPOS_CON_REFERENCIA.has(tipoNumerico)) {
+      // Nota de crédito/débito: identifica el comprobante que modifica.
+      lines.push('  <InformacionReferencia>');
+      lines.push(`    <NCFModificado>${this.esc(ecf.ncfModificado ?? '')}</NCFModificado>`);
+      lines.push(`    <FechaNCFModificado>${this.fechaColumna(ecf.fechaNcfModificado as Date | string)}</FechaNCFModificado>`);
+      lines.push(`    <CodigoModificacion>${ecf.codigoModificacion}</CodigoModificacion>`);
+      if (ecf.razonModificacion) {
+        lines.push(`    <RazonModificacion>${this.esc(ecf.razonModificacion)}</RazonModificacion>`);
+      }
+      lines.push('  </InformacionReferencia>');
+    }
     // FechaHoraFirma es requerida (minOccurs=1) y va antes del elemento xs:any (Signature)
     lines.push(`  <FechaHoraFirma>${fechaHoraFirma}</FechaHoraFirma>`);
     lines.push('</ECF>');
@@ -212,6 +262,65 @@ export class EcfXmlService {
     const mi = String(date.getMinutes()).padStart(2, '0');
     const ss = String(date.getSeconds()).padStart(2, '0');
     return `${this.toFecha(date)} ${hh}:${mi}:${ss}`;
+  }
+
+  /**
+   * Suma las líneas por tasa de ITBIS (indicador 1 = 18 %, 2 = 16 %, 3 = 0 %, 4 = exento)
+   * con los importes ya calculados al crear el comprobante (subtotal e ITBIS por línea).
+   */
+  private totalesPorTasa(lineas: Ecf['lineas']) {
+    const gravado: Record<number, number> = { 1: 0, 2: 0, 3: 0 };
+    const itbis: Record<number, number> = { 1: 0, 2: 0, 3: 0 };
+    const nLineas: Record<number, number> = { 1: 0, 2: 0, 3: 0 };
+    let exento = 0;
+    for (const l of lineas ?? []) {
+      const ind = l.indicadorFacturacion ?? 1;
+      const sub = Number(l.subtotal);
+      if (ind >= 1 && ind <= 3) {
+        gravado[ind] += sub;
+        itbis[ind] += Number(l.itbis);
+        nLineas[ind] += 1;
+      } else {
+        exento += sub;
+      }
+    }
+    const redondear = (n: number) => Math.round(n * 100) / 100;
+    return {
+      hayLineas: (lineas ?? []).length > 0,
+      gravado: { 1: redondear(gravado[1]), 2: redondear(gravado[2]), 3: redondear(gravado[3]) } as Record<number, number>,
+      itbis: { 1: redondear(itbis[1]), 2: redondear(itbis[2]), 3: redondear(itbis[3]) } as Record<number, number>,
+      lineas: nLineas,
+      exento: redondear(exento),
+      gravadoTotal: redondear(gravado[1] + gravado[2] + gravado[3]),
+    };
+  }
+
+  private fechaVencimiento(opciones: OpcionesXml, tipo: number): string {
+    if (!opciones.fechaVencimientoSecuencia) {
+      throw new Error(
+        `Falta la fecha de vencimiento de la secuencia eNCF del tipo ${tipo} (se configura en Secuencias)`,
+      );
+    }
+    return this.fechaColumna(opciones.fechaVencimientoSecuencia);
+  }
+
+  /** 0 si la nota de crédito se emite dentro de los 30 días del comprobante que modifica; 1 si no. */
+  private indicadorNotaCredito(ecf: Ecf): number {
+    if (!ecf.fechaNcfModificado) return 0;
+    const dias = (new Date(ecf.fechaEmision ?? new Date()).getTime() - new Date(ecf.fechaNcfModificado).getTime()) / 86_400_000;
+    return dias > 30 ? 1 : 0;
+  }
+
+  /**
+   * Columna `date` (llega como 'YYYY-MM-DD' o como Date) → DD-MM-YYYY. Un texto
+   * 'YYYY-MM-DD' no pasa por Date para que la zona horaria del servidor no lo corra un día.
+   */
+  private fechaColumna(v: Date | string): string {
+    if (typeof v === 'string') {
+      const m = v.match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+    }
+    return this.toFecha(new Date(v));
   }
 
   /** Redondea a 2 decimales y devuelve string para el XML. */

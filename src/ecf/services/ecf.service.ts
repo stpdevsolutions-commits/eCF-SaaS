@@ -20,7 +20,7 @@ import { Empresa } from '../../empresa/entities/empresa.entity';
 import { CreateEcfDto, CreateLineaEcfDto } from '../dto/create-ecf.dto';
 import { UpdateEcfDto } from '../dto/update-ecf.dto';
 import { XsdValidatorService } from '../../validation/xsd-validator.service';
-import { EcfXmlService, TIPO_ECF_MAP } from './ecf-xml.service';
+import { EcfXmlService, TIPO_ECF_MAP, TIPOS_CON_VENCIMIENTO_SECUENCIA } from './ecf-xml.service';
 import { EcfSigningService } from './ecf-signing.service';
 import { NcfSequenceService } from './ncf-sequence.service';
 import { DgiiService } from '../../dgii/dgii.service';
@@ -133,6 +133,11 @@ export class EcfService {
       tipoPago: dto.tipoPago ?? 1,
       tipoIngresos: dto.tipoIngresos ?? '01',
       terminoPago: dto.terminoPago,
+      fechaLimitePago: dto.fechaLimitePago,
+      ncfModificado: dto.referencia?.ncfModificado,
+      fechaNcfModificado: dto.referencia?.fechaNcfModificado,
+      codigoModificacion: dto.referencia?.codigoModificacion,
+      razonModificacion: dto.referencia?.razonModificacion,
       rncComprador: dto.rncComprador,
       idExtranjeroComprador: dto.idExtranjeroComprador,
       nombreComprador: dto.nombreComprador,
@@ -314,6 +319,25 @@ export class EcfService {
     ecf.encf = this.xmlService.buildEncf(ecf.tipoEcf, secuencia);
   }
 
+  /**
+   * Datos de la empresa que el XML necesita: el vencimiento de la secuencia eNCF.
+   * Si no se configuró, en los ambientes de prueba (TesteCF/CerteCF) se usa el fin del año
+   * próximo; en producción se exige configurarlo (un vencimiento inventado sería falso).
+   */
+  private async opcionesXml(ecf: Ecf, empresaId: string) {
+    const tipo = TIPO_ECF_MAP[ecf.tipoEcf];
+    if (!TIPOS_CON_VENCIMIENTO_SECUENCIA.has(tipo)) return {};
+    const configurada = await this.ncfSequenceService.getFechaVencimiento(empresaId, ecf.tipoEcf);
+    if (configurada) return { fechaVencimientoSecuencia: configurada };
+    const ambiente = this.configService.get<string>('DGII_ENVIRONMENT') || 'TesteCF';
+    if (ambiente === 'eCF') {
+      throw new BadRequestException(
+        `Configura la fecha de vencimiento de la secuencia del tipo ${ecf.tipoEcf} (PUT /empresa/secuencias/${ecf.tipoEcf}) antes de emitir en producción`,
+      );
+    }
+    return { fechaVencimientoSecuencia: `${new Date().getFullYear() + 1}-12-31` };
+  }
+
   // ── Validación ──────────────────────────────────────────────────────────────
 
   async validateEcf(id: string, empresaId: string) {
@@ -326,7 +350,7 @@ export class EcfService {
     }
 
     await this.asignarEncf(ecf, empresaId);
-    const xml = this.xmlService.generateXml(ecf);
+    const xml = this.xmlService.generateXml(ecf, 1, await this.opcionesXml(ecf, empresaId));
     const result = this.validatorService.validateXmlStructure(xml, ecf.tipoEcf);
 
     ecf.xmlValidacion = xml;
@@ -446,7 +470,7 @@ export class EcfService {
     let xmlSinFirmar = ecf.xmlValidacion;
     if (!xmlSinFirmar) {
       await this.asignarEncf(ecf, empresaId);
-      xmlSinFirmar = this.xmlService.generateXml(ecf);
+      xmlSinFirmar = this.xmlService.generateXml(ecf, 1, await this.opcionesXml(ecf, empresaId));
     }
 
     // Validar estructura antes de firmar
@@ -553,14 +577,21 @@ export class EcfService {
 
   // ── Transmisión a la DGII ────────────────────────────────────────────────────
 
+  /**
+   * Token de la DGII para operar (transmitir, consultar, cancelar). La DGII autentica
+   * con el certificado (semilla firmada) y el token dura poco, así que se pide uno
+   * nuevo antes de cada operación y se guarda en la empresa. Antes había que llamar
+   * a POST /dgii/authenticate con una sesión de usuario, lo que dejaba sin poder
+   * transmitir a las integraciones server-to-server con API-key.
+   */
   private async obtenerTokenDgii(empresaId: string): Promise<string> {
     const empresa = await this.empresaRepository.findOne({ where: { id: empresaId } });
-    if (!empresa?.tokenDgii) {
-      throw new BadRequestException(
-        'Debes autenticarte con la DGII primero (POST /dgii/authenticate)',
-      );
+    if (!empresa) {
+      throw new NotFoundException('Empresa no encontrada');
     }
-    return empresa.tokenDgii;
+    const { token } = await this.dgiiService.authenticate(empresa.rnc, '', '');
+    await this.empresaRepository.update(empresaId, { tokenDgii: token, certificadoDgii: true });
+    return token;
   }
 
   async transmitEcf(id: string, empresaId: string) {

@@ -170,12 +170,28 @@ export class DgiiService {
       };
     } catch (error) {
       if (error instanceof HttpException) throw error;
+      // La librería lanza la respuesta de la DGII tal cual cuando rechaza un envío (p. ej. el
+      // resumen RFCE); se convierte su mensaje en un error legible en vez de "[object Object]".
+      const rechazo = this.mensajeRechazoDgii(error);
+      if (rechazo) {
+        this.logger.warn(`La DGII rechazó la transmisión de ${ecf.encf}: ${rechazo}`);
+        throw new HttpException(`La DGII rechazó el comprobante: ${rechazo}`, HttpStatus.BAD_REQUEST);
+      }
       this.logger.error(`Error transmitiendo a DGII: ${error}`);
       throw new HttpException(
         'Error en transmisión a DGII',
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
+  }
+
+  /** Mensaje de una respuesta de rechazo de la DGII lanzada como objeto (`{ estado, mensajes: [{ valor }] }`). */
+  private mensajeRechazoDgii(error: unknown): string | null {
+    if (!error || typeof error !== 'object') return null;
+    const mensajes = (error as { mensajes?: { valor?: string }[] }).mensajes;
+    if (!Array.isArray(mensajes) || mensajes.length === 0) return null;
+    const texto = mensajes.map((m) => (m.valor ?? '').trim()).filter(Boolean).join('; ');
+    return texto || null;
   }
 
   async queryEcfStatus(uuid: string, token: string): Promise<any> {

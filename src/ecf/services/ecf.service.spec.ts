@@ -55,9 +55,12 @@ describe('EcfService', () => {
         razonSocial: 'Empresa Emisora',
         direccion: 'Calle Falsa 123',
       }),
+      update: jest.fn().mockResolvedValue({}),
     };
 
     mockDgiiService = {
+      // La DGII autentica con el certificado: el token se pide antes de cada operación.
+      authenticate: jest.fn().mockResolvedValue({ token: 'tok-123', expiresIn: 3600 }),
       transmitEcf: jest.fn(),
       queryEcfStatus: jest.fn(),
       cancelEcf: jest.fn(),
@@ -95,6 +98,7 @@ describe('EcfService', () => {
 
     mockNcfSequenceService = {
       nextSequence: jest.fn().mockResolvedValue(1),
+      getFechaVencimiento: jest.fn().mockResolvedValue(null),
     };
 
     const mockConfigService = {
@@ -254,6 +258,54 @@ describe('EcfService', () => {
 
       expect(result.valid).toBe(true);
     });
+
+    it('pasa al XML el vencimiento configurado de la secuencia', async () => {
+      const mockEcf = { id: '1', tipoEcf: 'e-CF_31_v_1_0', estado: 'draft', empresaId: 'empresa-id' };
+      mockEcfRepository.findOne.mockResolvedValue(mockEcf);
+      mockEcfRepository.save.mockResolvedValue(mockEcf);
+      mockNcfSequenceService.getFechaVencimiento.mockResolvedValue('2028-06-30');
+
+      await service.validateEcf('1', 'empresa-id');
+
+      expect(mockXmlService.generateXml).toHaveBeenCalledWith(
+        expect.anything(),
+        1,
+        { fechaVencimientoSecuencia: '2028-06-30' },
+      );
+    });
+
+    it('en pruebas (TesteCF) usa el fin del año próximo si no hay vencimiento configurado', async () => {
+      const mockEcf = { id: '1', tipoEcf: 'e-CF_31_v_1_0', estado: 'draft', empresaId: 'empresa-id' };
+      mockEcfRepository.findOne.mockResolvedValue(mockEcf);
+      mockEcfRepository.save.mockResolvedValue(mockEcf);
+
+      await service.validateEcf('1', 'empresa-id');
+
+      expect(mockXmlService.generateXml).toHaveBeenCalledWith(
+        expect.anything(),
+        1,
+        { fechaVencimientoSecuencia: `${new Date().getFullYear() + 1}-12-31` },
+      );
+    });
+
+    it('en producción exige configurar el vencimiento en vez de inventarlo', async () => {
+      const mockEcf = { id: '1', tipoEcf: 'e-CF_31_v_1_0', estado: 'draft', empresaId: 'empresa-id' };
+      mockEcfRepository.findOne.mockResolvedValue(mockEcf);
+      (service as any).configService.get = jest.fn().mockReturnValue('eCF');
+
+      await expect(service.validateEcf('1', 'empresa-id')).rejects.toThrow(/fecha de vencimiento/);
+    });
+
+    it('el e-CF 32 no necesita vencimiento de secuencia', async () => {
+      const mockEcf = { id: '1', tipoEcf: 'e-CF_32_v_1_0', estado: 'draft', empresaId: 'empresa-id' };
+      mockEcfRepository.findOne.mockResolvedValue(mockEcf);
+      mockEcfRepository.save.mockResolvedValue(mockEcf);
+      (service as any).configService.get = jest.fn().mockReturnValue('eCF');
+
+      await service.validateEcf('1', 'empresa-id');
+
+      expect(mockXmlService.generateXml).toHaveBeenCalledWith(expect.anything(), 1, {});
+    });
   });
 
   describe('scoping por empresa', () => {
@@ -354,7 +406,7 @@ describe('EcfService', () => {
 
       // No debe consumir una secuencia nueva ni cambiar el eNCF asignado
       expect(mockNcfSequenceService.nextSequence).not.toHaveBeenCalled();
-      expect(mockXmlService.generateXml).toHaveBeenCalledWith(ecf);
+      expect(mockXmlService.generateXml).toHaveBeenCalledWith(ecf, 1, expect.anything());
       expect(ecf.encf).toBe('E310000000007');
       expect(result.encf).toBe('E310000000007');
       expect(result.estado).toBe('signed');
@@ -627,13 +679,28 @@ describe('EcfService', () => {
       expect(mockDgiiService.transmitEcf).not.toHaveBeenCalled();
     });
 
-    it('rechaza si la empresa no tiene tokenDgii', async () => {
-      mockEcfRepository.findOne.mockResolvedValue({ id: '1', estado: 'signed' });
-      mockEmpresaRepository.findOne.mockResolvedValue({ id: 'empresa-id', tokenDgii: null });
+    it('se autentica con la DGII por su cuenta (sin token guardado ni sesión de usuario)', async () => {
+      const mockEcf = { id: '1', estado: 'signed', xmlFirmado: '<ECF/>' };
+      mockEcfRepository.findOne.mockResolvedValue(mockEcf);
+      mockEmpresaRepository.findOne.mockResolvedValue({ id: 'empresa-id', rnc: '101000001', tokenDgii: null });
+      mockDgiiService.transmitEcf.mockResolvedValue({ uuid: 'u', codigo: '200', mensajes: [] });
+      mockEcfRepository.save.mockImplementation((data: any) => Promise.resolve(data));
 
-      await expect(service.transmitEcf('1', 'empresa-id')).rejects.toThrow(
-        BadRequestException,
-      );
+      await service.transmitEcf('1', 'empresa-id');
+
+      expect(mockDgiiService.authenticate).toHaveBeenCalledWith('101000001', '', '');
+      expect(mockEmpresaRepository.update).toHaveBeenCalledWith('empresa-id', {
+        tokenDgii: 'tok-123',
+        certificadoDgii: true,
+      });
+      expect(mockDgiiService.transmitEcf).toHaveBeenCalledWith(mockEcf, 'tok-123');
+    });
+
+    it('no transmite si la DGII no autentica', async () => {
+      mockEcfRepository.findOne.mockResolvedValue({ id: '1', estado: 'signed', xmlFirmado: '<ECF/>' });
+      mockDgiiService.authenticate.mockRejectedValue(new Error('Error autenticando con DGII'));
+
+      await expect(service.transmitEcf('1', 'empresa-id')).rejects.toThrow('Error autenticando con DGII');
       expect(mockDgiiService.transmitEcf).not.toHaveBeenCalled();
     });
 
@@ -671,13 +738,15 @@ describe('EcfService', () => {
       expect(mockDgiiService.queryEcfStatus).not.toHaveBeenCalled();
     });
 
-    it('rechaza si la empresa no tiene tokenDgii', async () => {
+    it('se autentica con la DGII antes de consultar el estado', async () => {
       mockEcfRepository.findOne.mockResolvedValue({ id: '1', estado: 'transmitted', uuid: 'uuid-abc' });
-      mockEmpresaRepository.findOne.mockResolvedValue({ id: 'empresa-id', tokenDgii: null });
+      mockEmpresaRepository.findOne.mockResolvedValue({ id: 'empresa-id', rnc: '101000001', tokenDgii: null });
+      mockDgiiService.queryEcfStatus.mockResolvedValue({ uuid: 'uuid-abc', estado: 'En proceso', codigo: '0', mensaje: 'x' });
 
-      await expect(service.checkStatus('1', 'empresa-id')).rejects.toThrow(
-        BadRequestException,
-      );
+      await service.checkStatus('1', 'empresa-id');
+
+      expect(mockDgiiService.authenticate).toHaveBeenCalled();
+      expect(mockDgiiService.queryEcfStatus).toHaveBeenCalledWith('uuid-abc', 'tok-123');
     });
 
     it('actualiza el estado local a accepted cuando la DGII responde Aceptado', async () => {

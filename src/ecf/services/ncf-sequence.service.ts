@@ -10,6 +10,8 @@ export interface SecuenciaInfo {
   tipoEcf: string;
   ultimaSecuencia: number;
   proximoEncf: string;
+  /** Vencimiento de la secuencia autorizada ('YYYY-MM-DD'), si se configuró. */
+  fechaVencimiento: string | null;
 }
 
 @Injectable()
@@ -49,6 +51,7 @@ export class NcfSequenceService {
   async listSequences(empresaId: string): Promise<SecuenciaInfo[]> {
     const rows = await this.sequenceRepository.find({ where: { empresaId } });
     const byTipo = new Map(rows.map((r) => [r.tipoEcf, Number(r.ultimaSecuencia)]));
+    const vencimientos = new Map(rows.map((r) => [r.tipoEcf, r.fechaVencimiento ?? null]));
 
     return Object.entries(TIPO_ECF_MAP).map(([tipoEcf, tipoNumerico]) => {
       const ultimaSecuencia = byTipo.get(tipoEcf) ?? 0;
@@ -56,6 +59,7 @@ export class NcfSequenceService {
         tipoEcf,
         ultimaSecuencia,
         proximoEncf: this.formatENCF(tipoNumerico, ultimaSecuencia + 1),
+        fechaVencimiento: vencimientos.get(tipoEcf) ?? null,
       };
     });
   }
@@ -69,10 +73,17 @@ export class NcfSequenceService {
    * se aplica dentro del propio UPDATE (atómico frente a nextSequence
    * concurrentes).
    */
+  /** Vencimiento configurado de la secuencia (o null si no se ha fijado). */
+  async getFechaVencimiento(empresaId: string, tipoEcf: string): Promise<string | null> {
+    const row = await this.sequenceRepository.findOne({ where: { empresaId, tipoEcf } });
+    return row?.fechaVencimiento ?? null;
+  }
+
   async setSequence(
     empresaId: string,
     tipoEcf: string,
     ultimaSecuencia: number,
+    fechaVencimiento?: string,
   ): Promise<SecuenciaInfo> {
     const tipoNumerico = TIPO_ECF_MAP[tipoEcf];
     if (!tipoNumerico) {
@@ -94,13 +105,14 @@ export class NcfSequenceService {
     // Upsert condicional: solo actualiza si el nuevo valor no es menor que el actual.
     const rows: Array<{ ultima_secuencia: string }> =
       await this.sequenceRepository.query(
-        `INSERT INTO ncf_sequence (empresa_id, tipo_ecf, ultima_secuencia)
-         VALUES ($1, $2, $3)
+        `INSERT INTO ncf_sequence (empresa_id, tipo_ecf, ultima_secuencia, fecha_vencimiento)
+         VALUES ($1, $2, $3, $4)
          ON CONFLICT (empresa_id, tipo_ecf)
-         DO UPDATE SET ultima_secuencia = EXCLUDED.ultima_secuencia
+         DO UPDATE SET ultima_secuencia = EXCLUDED.ultima_secuencia,
+                       fecha_vencimiento = COALESCE(EXCLUDED.fecha_vencimiento, ncf_sequence.fecha_vencimiento)
          WHERE ncf_sequence.ultima_secuencia <= EXCLUDED.ultima_secuencia
          RETURNING ultima_secuencia`,
-        [empresaId, tipoEcf, ultimaSecuencia],
+        [empresaId, tipoEcf, ultimaSecuencia, fechaVencimiento ?? null],
       );
 
     if (rows.length === 0) {
@@ -115,6 +127,7 @@ export class NcfSequenceService {
       tipoEcf,
       ultimaSecuencia: nuevaSecuencia,
       proximoEncf: this.formatENCF(tipoNumerico, nuevaSecuencia + 1),
+      fechaVencimiento: await this.getFechaVencimiento(empresaId, tipoEcf),
     };
   }
 

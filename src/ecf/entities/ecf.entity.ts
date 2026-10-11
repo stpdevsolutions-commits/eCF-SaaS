@@ -62,6 +62,25 @@ export class Ecf {
   @Column({ type: 'varchar', length: 15, nullable: true })
   terminoPago?: string;
 
+  /** Fecha límite de pago de una venta a crédito (tipoPago 2), 'YYYY-MM-DD'. */
+  @Column({ type: 'date', nullable: true })
+  fechaLimitePago?: string;
+
+  // ── Referencia al comprobante que modifica (notas de crédito/débito, e-CF 33/34) ──
+  /** eNCF/NCF modificado (11 a 19 caracteres). */
+  @Column({ type: 'varchar', length: 19, nullable: true })
+  ncfModificado?: string;
+
+  @Column({ type: 'date', nullable: true })
+  fechaNcfModificado?: string;
+
+  /** 1 anula · 2 corrige texto · 3 corrige montos · 4 reemplaza contingencia · 5 referencia factura de consumo. */
+  @Column({ type: 'int', nullable: true })
+  codigoModificacion?: number;
+
+  @Column({ type: 'varchar', length: 90, nullable: true })
+  razonModificacion?: string;
+
   /**
    * Opcional SOLO para e-CF_32 (Factura de Consumo) — venta a consumidor
    * final sin RNC/Cédula. El XSD de la DGII define RNCComprador con

@@ -73,6 +73,7 @@ export class EmpresaController {
       req.user.empresaId,
       tipoEcf,
       dto.ultimaSecuencia,
+      dto.fechaVencimiento,
     );
   }
 
