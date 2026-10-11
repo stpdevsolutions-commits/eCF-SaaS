@@ -30,6 +30,9 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      # Hora de República Dominicana: la fecha de emisión y la hora de firma del e-CF salen de este reloj.
+      TZ: America/Santo_Domingo
     depends_on:
       ecf-postgres:
         condition: service_healthy

@@ -554,7 +554,8 @@ export class EcfService {
               ecf.encf!,
               montoTotal.toFixed(2),
               this.toFechaDgii(ecf.fechaEmision),
-              this.toFechaDgii(fechaFirmaParaQr),
+              // La DGII pide FechaFirma con hora: dd-MM-aaaa HH:mm:ss (Informe Técnico e-CF, 18.2.3).
+              this.toFechaHoraDgii(fechaFirmaParaQr),
               codigoSeguridad,
               environment,
             );
@@ -565,6 +566,14 @@ export class EcfService {
         }`,
       );
     }
+  }
+
+  /** Formato de fecha y hora DGII: DD-MM-YYYY HH:mm:ss (igual que FechaHoraFirma del XML). */
+  private toFechaHoraDgii(date: Date): string {
+    const hh = String(date.getHours()).padStart(2, '0');
+    const mi = String(date.getMinutes()).padStart(2, '0');
+    const ss = String(date.getSeconds()).padStart(2, '0');
+    return `${this.toFechaDgii(date)} ${hh}:${mi}:${ss}`;
   }
 
   /** Formato de fecha DGII: DD-MM-YYYY (igual que EcfXmlService). */
