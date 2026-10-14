@@ -29,6 +29,9 @@ export const TIPOS_CON_VENCIMIENTO_SECUENCIA = new Set([31, 33, 41, 43, 44, 45, 
 /** Tipos que modifican otro comprobante y exigen <InformacionReferencia>. */
 export const TIPOS_CON_REFERENCIA = new Set([33, 34]);
 
+/** Tipos cuyo XSD no tiene <TipoIngresos> en IdDoc (41 Compras, 43 Gastos Menores, 47 Pagos al Exterior). */
+export const TIPOS_SIN_TIPO_INGRESOS = new Set([41, 43, 47]);
+
 export interface OpcionesXml {
   /** Vencimiento de la secuencia eNCF autorizada (se imprime como DD-MM-YYYY). */
   fechaVencimientoSecuencia?: Date | string;
@@ -74,7 +77,7 @@ export class EcfXmlService {
       ...(TIPOS_CON_VENCIMIENTO_SECUENCIA.has(tipoNumerico)
         ? [`      <FechaVencimientoSecuencia>${this.fechaVencimiento(opciones, tipoNumerico)}</FechaVencimientoSecuencia>`]
         : []),
-      `      <TipoIngresos>${this.esc(ecf.tipoIngresos)}</TipoIngresos>`,
+      ...(TIPOS_SIN_TIPO_INGRESOS.has(tipoNumerico) ? [] : [`      <TipoIngresos>${this.esc(ecf.tipoIngresos)}</TipoIngresos>`]),
       `      <TipoPago>${ecf.tipoPago}</TipoPago>`,
       ...(ecf.fechaLimitePago ? [`      <FechaLimitePago>${this.fechaColumna(ecf.fechaLimitePago)}</FechaLimitePago>`] : []),
       ...(ecf.terminoPago ? [`      <TerminoPago>${this.esc(ecf.terminoPago)}</TerminoPago>`] : []),
@@ -86,21 +89,7 @@ export class EcfXmlService {
       `      <DireccionEmisor>${this.esc(ecf.direccionEmisor || 'Sin Dirección Registrada')}</DireccionEmisor>`,
       `      <FechaEmision>${fechaEmision}</FechaEmision>`,
       '    </Emisor>',
-      '    <Comprador>',
-      // RNCComprador es minOccurs="0" en el XSD SOLO para e-CF_32 (venta a
-      // consumidor final sin RNC/Cédula) — se omite el tag por completo si
-      // no hay valor. Para los demás tipos, XsdValidatorService.validateEcf
-      // ya exige que venga presente antes de llegar aquí.
-      ...(ecf.rncComprador ? [`      <RNCComprador>${this.esc(ecf.rncComprador)}</RNCComprador>`] : []),
-      ...(ecf.idExtranjeroComprador ? [`      <IdentificadorExtranjero>${this.esc(ecf.idExtranjeroComprador)}</IdentificadorExtranjero>`] : []),
-      `      <RazonSocialComprador>${this.esc(ecf.nombreComprador)}</RazonSocialComprador>`,
-      ...(ecf.correoComprador ? [`      <CorreoComprador>${this.esc(ecf.correoComprador)}</CorreoComprador>`] : []),
-      ...(ecf.direccionComprador ? [`      <DireccionComprador>${this.esc(ecf.direccionComprador)}</DireccionComprador>`] : []),
-      ...(ecf.municipioComprador ? [`      <MunicipioComprador>${this.esc(ecf.municipioComprador)}</MunicipioComprador>`] : []),
-      ...(ecf.provinciaComprador ? [`      <ProvinciaComprador>${this.esc(ecf.provinciaComprador)}</ProvinciaComprador>`] : []),
-      ...(ecf.telefonoComprador ? [`      <TelefonoAdicional>${this.esc(ecf.telefonoComprador)}</TelefonoAdicional>`] : []),
-      ...(ecf.comentarioComprador ? [`      <InformacionAdicionalComprador>${this.esc(ecf.comentarioComprador)}</InformacionAdicionalComprador>`] : []),
-      '    </Comprador>',
+      ...this.bloqueComprador(ecf, tipoNumerico),
       '    <Totales>',
     ];
 
@@ -233,6 +222,40 @@ export class EcfXmlService {
   }
 
   // ── Helpers privados ────────────────────────────────────────────────────────
+
+  /**
+   * Bloque <Comprador> según el XSD de cada tipo:
+   *  - e-CF 43 (Gastos Menores): no tiene bloque Comprador.
+   *  - e-CF 47 (Pagos al Exterior): solo IdentificadorExtranjero y RazonSocialComprador.
+   *  - Resto: RNCComprador (opcional salvo 31/41/45, validado antes), el
+   *    nombre y los datos de contacto opcionales.
+   */
+  private bloqueComprador(ecf: Ecf, tipo: number): string[] {
+    if (tipo === 43) return [];
+    const nombre = ecf.nombreComprador
+      ? [`      <RazonSocialComprador>${this.esc(ecf.nombreComprador)}</RazonSocialComprador>`]
+      : [];
+    const idExtranjero = ecf.idExtranjeroComprador
+      ? [`      <IdentificadorExtranjero>${this.esc(ecf.idExtranjeroComprador)}</IdentificadorExtranjero>`]
+      : [];
+    if (tipo === 47) return ['    <Comprador>', ...idExtranjero, ...nombre, '    </Comprador>'];
+    return [
+      '    <Comprador>',
+      // RNCComprador es minOccurs="0" en el XSD salvo en 31/41/45 — se omite
+      // el tag por completo si no hay valor (XsdValidatorService.validateEcf
+      // exige que venga presente en los tipos donde es obligatorio).
+      ...(ecf.rncComprador ? [`      <RNCComprador>${this.esc(ecf.rncComprador)}</RNCComprador>`] : []),
+      ...idExtranjero,
+      ...nombre,
+      ...(ecf.correoComprador ? [`      <CorreoComprador>${this.esc(ecf.correoComprador)}</CorreoComprador>`] : []),
+      ...(ecf.direccionComprador ? [`      <DireccionComprador>${this.esc(ecf.direccionComprador)}</DireccionComprador>`] : []),
+      ...(ecf.municipioComprador ? [`      <MunicipioComprador>${this.esc(ecf.municipioComprador)}</MunicipioComprador>`] : []),
+      ...(ecf.provinciaComprador ? [`      <ProvinciaComprador>${this.esc(ecf.provinciaComprador)}</ProvinciaComprador>`] : []),
+      ...(ecf.telefonoComprador ? [`      <TelefonoAdicional>${this.esc(ecf.telefonoComprador)}</TelefonoAdicional>`] : []),
+      ...(ecf.comentarioComprador ? [`      <InformacionAdicionalComprador>${this.esc(ecf.comentarioComprador)}</InformacionAdicionalComprador>`] : []),
+      '    </Comprador>',
+    ];
+  }
 
   /**
    * Construye el eNCF de 13 caracteres:  E + tipo(2 dígitos) + secuencia(10 dígitos)

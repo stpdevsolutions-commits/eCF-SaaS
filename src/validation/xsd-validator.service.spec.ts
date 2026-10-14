@@ -62,6 +62,53 @@ describe('XsdValidatorService', () => {
     });
   });
 
+  describe('validateEcf — obligatoriedad del comprador por tipo (XSD oficiales)', () => {
+    it.each(['e-CF_33_v_1_0', 'e-CF_34_v_1_0', 'e-CF_44_v_1_0', 'e-CF_46_v_1_0'])(
+      '%s no exige rncComprador (opcional en el XSD)',
+      (tipoEcf) => {
+        const result = service.validateEcf({
+          ...baseData(),
+          tipoEcf,
+          rncComprador: undefined,
+          referencia: { ncfModificado: 'E310000000001', fechaNcfModificado: '2026-10-01', codigoModificacion: 3 },
+        });
+        expect(result.errors).not.toContain('RNC Comprador inválido (debe ser 9-11 dígitos)');
+      },
+    );
+
+    it.each(['e-CF_41_v_1_0', 'e-CF_45_v_1_0'])('%s sigue exigiendo rncComprador', (tipoEcf) => {
+      const result = service.validateEcf({ ...baseData(), tipoEcf, rncComprador: undefined });
+      expect(result.errors).toContain('RNC Comprador inválido (debe ser 9-11 dígitos)');
+    });
+
+    it('e-CF_43 (Gastos Menores) no tiene comprador: no exige nombre ni RNC', () => {
+      const result = service.validateEcf({
+        ...baseData(),
+        tipoEcf: 'e-CF_43_v_1_0',
+        rncComprador: undefined,
+        nombreComprador: undefined,
+      });
+      expect(result.errors).toEqual([]);
+    });
+
+    it('e-CF_31 sigue exigiendo el nombre del comprador', () => {
+      const result = service.validateEcf({ ...baseData(), rncComprador: '101011010', nombreComprador: undefined });
+      expect(result.errors).toContain('Nombre Comprador requerido');
+    });
+  });
+
+  describe('validateXmlStructure — TipoIngresos y Comprador según el tipo', () => {
+    const xmlSinComprador = '<ECF><Encabezado><Version>1.0</Version><IdDoc><TipoeCF>43</TipoeCF><eNCF>E430000000001</eNCF></IdDoc></Encabezado></ECF>';
+
+    it('e-CF_43 no exige <Comprador> ni <TipoIngresos>; e-CF_31 sí', () => {
+      expect(service.validateXmlStructure(xmlSinComprador, 'e-CF_43_v_1_0').errors).not.toContain('Elemento requerido ausente: <Comprador>');
+      expect(service.validateXmlStructure(xmlSinComprador, 'e-CF_43_v_1_0').errors).not.toContain('Elemento requerido ausente: <TipoIngresos>');
+      expect(service.validateXmlStructure(xmlSinComprador, 'e-CF_31_v_1_0').errors).toEqual(
+        expect.arrayContaining(['Elemento requerido ausente: <Comprador>', 'Elemento requerido ausente: <TipoIngresos>']),
+      );
+    });
+  });
+
   describe('validateXmlStructure — RNCComprador', () => {
     const xmlSinRncComprador = `<ECF>
       <Encabezado><Version>1.0</Version><IdDoc><TipoeCF>32</TipoeCF><eNCF>E320000000001</eNCF><TipoIngresos>01</TipoIngresos><TipoPago>1</TipoPago></IdDoc>

@@ -6,8 +6,22 @@ export interface ValidationResult {
   warnings: string[];
 }
 
-/** e-CF_32 (Factura de Consumo) es el único tipo cuyo XSD define RNCComprador con minOccurs="0" (venta a consumidor final sin RNC/Cédula). */
-const TIPO_SIN_RNC_COMPRADOR_OBLIGATORIO = 'e-CF_32_v_1_0';
+/**
+ * Según los XSD oficiales de la DGII, RNCComprador es obligatorio SOLO en los
+ * e-CF 31, 41 y 45; en el resto (32, 33, 34, 44, 46, 47) es opcional (venta a
+ * consumidor final / extranjero) y el 43 no lleva bloque Comprador.
+ */
+const TIPOS_RNC_COMPRADOR_OBLIGATORIO = new Set(['e-CF_31_v_1_0', 'e-CF_41_v_1_0', 'e-CF_45_v_1_0']);
+/** RazonSocialComprador es obligatoria en 31, 41, 44, 45 y 46 (opcional en 32, 33, 34, 47; 43 sin Comprador). */
+const TIPOS_NOMBRE_COMPRADOR_OBLIGATORIO = new Set([
+  'e-CF_31_v_1_0',
+  'e-CF_41_v_1_0',
+  'e-CF_44_v_1_0',
+  'e-CF_45_v_1_0',
+  'e-CF_46_v_1_0',
+]);
+/** Tipos cuyo XSD NO tiene <TipoIngresos> en IdDoc. */
+const TIPOS_SIN_TIPO_INGRESOS = new Set(['e-CF_41_v_1_0', 'e-CF_43_v_1_0', 'e-CF_47_v_1_0']);
 
 /**
  * Servicio de validación de comprobantes fiscales electrónicos (e-CF).
@@ -34,10 +48,9 @@ export class XsdValidatorService {
     // de Consumo), donde el XSD lo define con minOccurs="0" — permite vender
     // a un consumidor final sin RNC/Cédula. Si viene presente en e-CF_32,
     // igual debe tener formato válido.
-    const esConsumo = data['tipoEcf'] === TIPO_SIN_RNC_COMPRADOR_OBLIGATORIO;
-    if (!esConsumo && (!data['rncComprador'] || !/^\d{9,11}$/.test(String(data['rncComprador'])))) {
-      errors.push('RNC Comprador inválido (debe ser 9-11 dígitos)');
-    } else if (esConsumo && data['rncComprador'] && !/^\d{9,11}$/.test(String(data['rncComprador']))) {
+    // (Actualizado: según los XSD oficiales el RNC solo es obligatorio en 31, 41 y 45.)
+    const rncObligatorio = TIPOS_RNC_COMPRADOR_OBLIGATORIO.has(String(data['tipoEcf']));
+    if ((rncObligatorio || !!data['rncComprador']) && !/^\d{9,11}$/.test(String(data['rncComprador'] ?? ''))) {
       errors.push('RNC Comprador inválido (debe ser 9-11 dígitos)');
     }
 
@@ -102,7 +115,11 @@ export class XsdValidatorService {
       errors.push('Nombre Emisor requerido');
     }
 
-    if (!data['nombreComprador']) {
+    // Un tipo no reconocido ya se reportó arriba; en ese caso se exige por defecto.
+    const nombreObligatorio =
+      TIPOS_NOMBRE_COMPRADOR_OBLIGATORIO.has(String(data['tipoEcf'])) ||
+      !tiposValidos.includes(String(data['tipoEcf']));
+    if (nombreObligatorio && !data['nombreComprador']) {
       errors.push('Nombre Comprador requerido');
     }
 
@@ -145,15 +162,12 @@ export class XsdValidatorService {
       ['<IdDoc>', 'IdDoc'],
       ['<TipoeCF>', 'TipoeCF'],
       ['<eNCF>', 'eNCF'],
-      ['<TipoIngresos>', 'TipoIngresos'],
       ['<TipoPago>', 'TipoPago'],
       ['<Emisor>', 'Emisor'],
       ['<RNCEmisor>', 'RNCEmisor'],
       ['<RazonSocialEmisor>', 'RazonSocialEmisor'],
       ['<DireccionEmisor>', 'DireccionEmisor'],
       ['<FechaEmision>', 'FechaEmision'],
-      ['<Comprador>', 'Comprador'],
-      ['<RazonSocialComprador>', 'RazonSocialComprador'],
       ['<Totales>', 'Totales'],
       ['<MontoTotal>', 'MontoTotal'],
       ['<DetallesItems>', 'DetallesItems'],
@@ -174,8 +188,19 @@ export class XsdValidatorService {
       }
     }
 
-    // RNCComprador: requerido para todos los tipos excepto e-CF_32.
-    if (tipoEcf !== TIPO_SIN_RNC_COMPRADOR_OBLIGATORIO && !xml.includes('<RNCComprador>')) {
+    // Elementos que dependen del tipo (según los XSD oficiales). Sin tipo se
+    // aplica el criterio estricto del e-CF 31.
+    const tipoRef = tipoEcf ?? 'e-CF_31_v_1_0';
+    if (tipoRef !== 'e-CF_43_v_1_0' && !xml.includes('<Comprador>')) {
+      errors.push('Elemento requerido ausente: <Comprador>');
+    }
+    if (!TIPOS_SIN_TIPO_INGRESOS.has(tipoRef) && !xml.includes('<TipoIngresos>')) {
+      errors.push('Elemento requerido ausente: <TipoIngresos>');
+    }
+    if (TIPOS_NOMBRE_COMPRADOR_OBLIGATORIO.has(tipoRef) && !xml.includes('<RazonSocialComprador>')) {
+      errors.push('Elemento requerido ausente: <RazonSocialComprador>');
+    }
+    if (TIPOS_RNC_COMPRADOR_OBLIGATORIO.has(tipoRef) && !xml.includes('<RNCComprador>')) {
       errors.push('Elemento requerido ausente: <RNCComprador>');
     }
 
