@@ -44,3 +44,54 @@ export function verificarFirmaXml(xmlContent: string): boolean {
     return false;
   }
 }
+
+export interface AnalisisFirmaXml {
+  /** La firma es criptográficamente válida con el certificado embebido. */
+  valida: boolean;
+  motivo?: string;
+  /** Certificado firmante (el primero de <X509Data>) en PEM. */
+  certificadoPem?: string;
+  /** Certificados adicionales de <X509Data> (cadena intermedia), en PEM. */
+  certificadosIntermediosPem: string[];
+  /** Contenido XML canónico que la firma REALMENTE cubre (referencias verificadas). */
+  referenciasFirmadas: string[];
+}
+
+const aPem = (b64: string): string =>
+  `-----BEGIN CERTIFICATE-----\n${b64.replace(/\s+/g, '').match(/.{1,64}/g)?.join('\n') ?? b64}\n-----END CERTIFICATE-----\n`;
+
+/**
+ * Como verificarFirmaXml, pero además devuelve el certificado firmante, la
+ * cadena embebida y el contenido que la firma efectivamente cubre. Hace falta
+ * cuando se debe garantizar que un dato concreto (p. ej. el <valor> de la
+ * semilla) está DENTRO de lo firmado: una firma válida sobre otra parte del
+ * documento no basta.
+ */
+export function analizarFirmaXml(xmlContent: string): AnalisisFirmaXml {
+  const vacio: AnalisisFirmaXml = { valida: false, certificadosIntermediosPem: [], referenciasFirmadas: [] };
+  try {
+    const certs = [
+      ...xmlContent.matchAll(/<(?:[\w]+:)?X509Certificate>([^<]+)<\/(?:[\w]+:)?X509Certificate>/g),
+    ].map((m) => m[1].trim());
+    if (certs.length === 0) return { ...vacio, motivo: 'La firma no incluye el certificado (X509Certificate)' };
+
+    const certificadoPem = aPem(certs[0]);
+    const signedXml = new SignedXml({ publicCert: certificadoPem });
+    const doc = new DOMParser().parseFromString(xmlContent);
+    const [signatureNode] = signedXml.findSignatures(doc);
+    if (!signatureNode) return { ...vacio, motivo: 'El XML no contiene una firma XMLDSig' };
+    signedXml.loadSignature(signatureNode);
+
+    if (!signedXml.checkSignature(xmlContent)) {
+      return { ...vacio, certificadoPem, motivo: 'La firma digital no es válida' };
+    }
+    return {
+      valida: true,
+      certificadoPem,
+      certificadosIntermediosPem: certs.slice(1).map(aPem),
+      referenciasFirmadas: signedXml.getSignedReferences(),
+    };
+  } catch (e) {
+    return { ...vacio, motivo: `No se pudo verificar la firma: ${(e as Error).message}` };
+  }
+}

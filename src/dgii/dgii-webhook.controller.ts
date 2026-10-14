@@ -6,6 +6,7 @@ import {
   Header,
   UseInterceptors,
   UploadedFiles,
+  UseGuards,
   BadRequestException,
 } from '@nestjs/common';
 import { AnyFilesInterceptor } from '@nestjs/platform-express';
@@ -13,6 +14,7 @@ import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { Request } from 'express';
 import { DgiiReceptorService } from './dgii-receptor.service';
+import { DgiiTokenGuard } from './dgii-token.guard';
 
 /** Forma mínima de un archivo de multer que necesitamos (evita depender de @types/multer). */
 interface ArchivoSubido {
@@ -37,6 +39,8 @@ interface ArchivoSubido {
 @ApiTags('DGII — Webhooks (Recepción / Aprobación)')
 @Controller('dgii/webhook')
 @Throttle({ default: { limit: 30, ttl: 60_000 } })
+// Exige el token de la URL de Autenticación solo si DGII_WEBHOOK_AUTH_REQUIRED=true (ver DgiiTokenGuard).
+@UseGuards(DgiiTokenGuard)
 export class DgiiWebhookController {
   constructor(private receptorService: DgiiReceptorService) {}
 

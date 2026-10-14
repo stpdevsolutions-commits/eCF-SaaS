@@ -5,6 +5,9 @@ import { DgiiCertificateService } from './dgii-certificate.service';
 import { DgiiController } from './dgii.controller';
 import { DgiiReceptorService } from './dgii-receptor.service';
 import { DgiiWebhookController } from './dgii-webhook.controller';
+import { DgiiAutenticacionController } from './dgii-autenticacion.controller';
+import { DgiiAutenticacionService } from './dgii-autenticacion.service';
+import { DgiiTokenGuard } from './dgii-token.guard';
 import { Ecf } from '../ecf/entities/ecf.entity';
 import { EcfRecibido } from '../ecf/entities/ecf-recibido.entity';
 import { Empresa } from '../empresa/entities/empresa.entity';
@@ -17,13 +20,15 @@ import { EcfSigningService } from '../ecf/services/ecf-signing.service';
 // ANECF sin crear una dependencia circular EcfModule <-> DgiiModule.
 @Module({
   imports: [TypeOrmModule.forFeature([Ecf, EcfRecibido, Empresa])],
-  controllers: [DgiiController, DgiiWebhookController],
+  controllers: [DgiiController, DgiiWebhookController, DgiiAutenticacionController],
   providers: [
     DgiiService,
     DgiiCertificateService,
     EcfAnulacionService,
     EcfSigningService,
     DgiiReceptorService,
+    DgiiAutenticacionService,
+    DgiiTokenGuard,
   ],
   exports: [DgiiService, DgiiCertificateService],
 })

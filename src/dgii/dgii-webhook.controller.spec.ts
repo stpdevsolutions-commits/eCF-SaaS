@@ -2,6 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { DgiiWebhookController } from './dgii-webhook.controller';
 import { DgiiReceptorService } from './dgii-receptor.service';
+import { DgiiAutenticacionService } from './dgii-autenticacion.service';
 
 describe('DgiiWebhookController', () => {
   let controller: DgiiWebhookController;
@@ -15,7 +16,11 @@ describe('DgiiWebhookController', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [DgiiWebhookController],
-      providers: [{ provide: DgiiReceptorService, useValue: receptorService }],
+      providers: [
+        { provide: DgiiReceptorService, useValue: receptorService },
+        // El guard DgiiTokenGuard consulta si la autenticación es obligatoria (aquí no).
+        { provide: DgiiAutenticacionService, useValue: { autenticacionRequerida: () => false } },
+      ],
     }).compile();
 
     controller = module.get(DgiiWebhookController);
