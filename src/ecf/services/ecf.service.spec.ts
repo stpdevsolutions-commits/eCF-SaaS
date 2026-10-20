@@ -291,7 +291,7 @@ describe('EcfService', () => {
     it('en producción exige configurar el vencimiento en vez de inventarlo', async () => {
       const mockEcf = { id: '1', tipoEcf: 'e-CF_31_v_1_0', estado: 'draft', empresaId: 'empresa-id' };
       mockEcfRepository.findOne.mockResolvedValue(mockEcf);
-      (service as any).configService.get = jest.fn().mockReturnValue('eCF');
+      (service as any).configService.get = jest.fn((k: string) => (k === "DGII_ENVIRONMENT" ? "eCF" : k === "ECF_EMISION_REAL_HABILITADA" ? "true" : undefined));
 
       await expect(service.validateEcf('1', 'empresa-id')).rejects.toThrow(/fecha de vencimiento/);
     });
@@ -300,7 +300,7 @@ describe('EcfService', () => {
       const mockEcf = { id: '1', tipoEcf: 'e-CF_32_v_1_0', estado: 'draft', empresaId: 'empresa-id' };
       mockEcfRepository.findOne.mockResolvedValue(mockEcf);
       mockEcfRepository.save.mockResolvedValue(mockEcf);
-      (service as any).configService.get = jest.fn().mockReturnValue('eCF');
+      (service as any).configService.get = jest.fn((k: string) => (k === "DGII_ENVIRONMENT" ? "eCF" : k === "ECF_EMISION_REAL_HABILITADA" ? "true" : undefined));
 
       await service.validateEcf('1', 'empresa-id');
 

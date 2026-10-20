@@ -4,6 +4,7 @@ import {
   NotFoundException,
   UnauthorizedException,
   BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -304,6 +305,23 @@ export class EcfService {
   // ── Secuencia eNCF ──────────────────────────────────────────────────────────
 
   /**
+   * Interruptor de seguridad de producción (ECF-12). Con DGII_ENVIRONMENT=eCF cada eNCF
+   * consumido y cada transmisión es un comprobante fiscal real: solo se permite si
+   * ECF_EMISION_REAL_HABILITADA=true (por defecto apagado). En TesteCF/CerteCF no aplica.
+   */
+  private asegurarEmisionPermitida(accion: string): void {
+    const ambiente = this.configService.get<string>('DGII_ENVIRONMENT') || 'TesteCF';
+    if (ambiente !== 'eCF') return;
+    const habilitada = String(this.configService.get<string>('ECF_EMISION_REAL_HABILITADA') ?? '')
+      .trim()
+      .toLowerCase();
+    if (habilitada === 'true') return;
+    throw new ForbiddenException(
+      `Emisión real deshabilitada: ecf-saas está en producción (eCF) pero ECF_EMISION_REAL_HABILITADA no es "true". No se puede ${accion}.`,
+    );
+  }
+
+  /**
    * Garantiza que el ECF tenga un eNCF asignado. La secuencia se consume UNA
    * sola vez: si el ECF ya tiene `encf` (asignado en una validación previa),
    * se reutiliza y NO se incrementa el contador.
@@ -312,6 +330,7 @@ export class EcfService {
     if (ecf.encf) {
       return;
     }
+    this.asegurarEmisionPermitida('consumir un eNCF');
     const secuencia = await this.ncfSequenceService.nextSequence(
       empresaId,
       ecf.tipoEcf,
@@ -604,6 +623,7 @@ export class EcfService {
   }
 
   async transmitEcf(id: string, empresaId: string) {
+    this.asegurarEmisionPermitida('transmitir un comprobante a la DGII');
     const ecf = await this.findOne(id, empresaId);
 
     if (ecf.estado !== 'signed') {
@@ -665,6 +685,7 @@ export class EcfService {
   // ── Cancelación en la DGII ───────────────────────────────────────────────────
 
   async cancelEcf(id: string, empresaId: string, motivo: string) {
+    this.asegurarEmisionPermitida('anular un comprobante ante la DGII');
     const ecf = await this.findOne(id, empresaId);
 
     if (!ecf.uuid) {
